@@ -8,22 +8,28 @@
 
 ## 0. 先搞清楚项目在哪
 
-| 环境 | 路径 |
+项目**唯一在维护的副本就在 WSL 里**：
+
+| 位置 | 路径 |
 | --- | --- |
-| Windows | `C:\Users\penghuangjie\WorkBuddy\2026-11-05-17-44-16\readalong-wails` |
-| WSL | `/mnt/c/Users/penghuangjie/WorkBuddy/2026-11-05-17-44-16/readalong-wails` |
-| GitHub | `git@github.com:phj2ll/readalong.git`（main = `12eca0a`，tag `v2.0.0`） |
+| WSL（主目录，开发在这里） | `/home/wwwroot/readalong` |
+| Windows 侧访问同一份文件 | `\\wsl$\Ubuntu-22.04-Recovered\home\wwwroot\readalong` |
+| GitHub | `git@github.com:phj2ll/readalong.git`（main = `40eb080`，tag `v2.0.0`） |
 
-项目**没有**放在 WSL 的 ext4 里，是在 Windows 盘上。WSL 里用 `/mnt/c` 访问。
+```bash
+cd /home/wwwroot/readalong
+git remote -v      # origin git@github.com:phj2ll/readalong.git
+git log --oneline -3
+```
 
-> 注意：`/mnt/c` 上跑 `go build` / `npm install` 会明显慢于 ext4。如果要在 WSL 里长期开发，
-> 建议 `cp -r` 到 `~/readalong` 后再干活，git 仓库一起拷过去即可。
+> 如果以 root 身份操作时报 `detected dubious ownership`，执行一次：
+> `git config --global --add safe.directory /home/wwwroot/readalong`
 
 历史遗留目录（**已废弃，不要再改**）：
 
-- `readalong/` — 最早的 Python + PyInstaller 版
-- `readalong-go/` — 第一版 Go 重写（webview2 手搓窗口 + 内置 HTTP server），已废弃
-- 本目录 `readalong-wails/` 才是当前唯一在维护的实现
+- `/home/wwwroot/readalong-legacy-python/` — 最早的 Python + PyInstaller 版（本地仓库，无 remote，2 个提交）
+- Windows 工作区的 `readalong-go/` — 第一版 Go 重写（手搓 webview2 窗口 + 内置 HTTP server），已废弃
+- `readalong-wails/`（Windows 工作区那份）已搬迁到 WSL，**不要再用那份**
 
 ---
 
@@ -408,9 +414,25 @@ whisper.cpp 不认，只认 `models\ggml-<name>.bin`。所以首次运行会重�
 
 ## 11. 环境备忘
 
-- Windows 侧 Go 1.25.4 解压在 `WorkBuddy/2026-11-05-17-44-16/_gosdk/sdk/go`
-  （`GOROOT` 必须用 Windows 反斜杠路径，Git Bash 下 `C:/...` 形式的 GOROOT 会报找不到）
+**WSL（主要开发环境）**
+- 项目在 `/home/wwwroot/readalong`，git 已连 remote，可直接 `git push`
+- 依赖没随项目搬过来，第一次要装：
+  ```bash
+  cd /home/wwwroot/readalong/frontend && npm install
+  go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
+  export PATH="$PATH:$(go env GOPATH)/bin"
+  ```
+- `wails dev` 需要图形环境：Windows 11 的 WSLg 自带；老版本要自己配 X server / VcXsrv
+- 不出窗口的替代做法：`wails build -platform windows/amd64` 交叉编译，产物放到 Windows 上双击运行
+- 语音模型和工具在 Windows 侧的 `%LOCALAPPDATA%\ReadAlong\`，WSL 里运行时会重新下到 `~/.readalong`
+  （或者设 `READALONG_DATA=/mnt/c/Users/penghuangjie/AppData/Local/ReadAlong` 复用，省一次下载）
+
+**Windows（仅历史产物）**
+- Go 1.25.4 留在 `WorkBuddy/2026-11-05-17-44-16/_gosdk/sdk/go`，需要时可用
 - git 在 PortableGit 的 `cmd/git.exe`
-- WSL 里 Go / Node 自带，直接用
-- 本开发环境的沙箱会阻止 `wsl.exe`、`reg.exe`，且**任何 Wails 窗口都起不来**（弹 "Error" 对话框，
-  最小的 Wails 程序也一样），所以 GUI 只能在真实桌面会话里验证，不是代码问题
+
+**关于 Wails 窗口**
+- 在没有真实桌面会话的沙箱/服务环境里，Wails 会弹一个标题为 "Error" 的对话框然后卡住，
+  连最小 Wails 程序也一样 —— 这是 WebView2 起不来，不是代码问题
+- 判断方法：`Get-Process | ? { $_.MainWindowTitle -ne "" }`，看到进程窗口标题是 `Error` 就是这种情况
+
