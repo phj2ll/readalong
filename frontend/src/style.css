@@ -1,0 +1,524 @@
+:root {
+  --bg: #f7f7f5;
+  --card: #ffffff;
+  --line: #e6e4dd;
+  --text: #1f1f1d;
+  --muted: #6f6e68;
+  --accent: #185fa5;
+  --accent-soft: #e6f1fb;
+  --ok: #0f6e56;
+  --ok-soft: #e1f5ee;
+  --rec: #a32d2d;
+  --rec-soft: #fbe9e9;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  min-height: 100%;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* ---------- 顶栏 ---------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px;
+  background: rgba(247, 247, 245, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 650;
+  font-size: 15px;
+  letter-spacing: 0.2px;
+}
+
+.brand .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.chip.ok {
+  border-color: #cfe5dc;
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.chip.warn {
+  border-color: #f0dcc0;
+  background: #fdf4e7;
+  color: #8a5a12;
+}
+
+/* ---------- 布局 ---------- */
+.wrap {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 22px 24px 60px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 26px 2px 12px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--muted);
+  letter-spacing: 0.6px;
+}
+
+.section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+/* ---------- 新建课程 ---------- */
+.create {
+  padding: 18px 20px;
+}
+
+.create h1 {
+  font-size: 17px;
+  font-weight: 650;
+  margin: 0 0 4px;
+}
+
+.create .hint {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 0 0 14px;
+}
+
+.form-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+input[type='url'],
+select {
+  font-family: inherit;
+  font-size: 13.5px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fcfcfa;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+input[type='url'] {
+  flex: 1;
+  min-width: 0;
+}
+
+input[type='url']:focus,
+select:focus {
+  border-color: var(--accent);
+  background: #fff;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.btn {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: 9px;
+  transition: border-color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: #c9c6bd;
+}
+
+.btn.primary {
+  background: var(--accent-soft);
+  border-color: #bcd8f2;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.btn.danger {
+  color: var(--rec);
+}
+
+.btn.danger:hover:not(:disabled) {
+  border-color: #e5b6b6;
+  background: var(--rec-soft);
+}
+
+.btn.small {
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 8px;
+}
+
+/* ---------- 进度 ---------- */
+.progress-box {
+  margin-top: 14px;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #fbfbf9;
+}
+
+.progress-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  margin-bottom: 8px;
+}
+
+.progress-head .step {
+  font-weight: 600;
+}
+
+.progress-head .pct {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.bar {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.bar > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.bar.ok > i {
+  background: var(--ok);
+}
+
+.log {
+  margin: 10px 0 0;
+  max-height: 108px;
+  overflow-y: auto;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--muted);
+  font-family: ui-monospace, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.log .err {
+  color: var(--rec);
+}
+
+/* ---------- 课程列表 ---------- */
+.courses {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 12px;
+}
+
+.course {
+  padding: 15px 17px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.course:hover {
+  border-color: #d8d4c9;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+}
+
+.course .t {
+  font-size: 14px;
+  font-weight: 620;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.course .m {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.course .acts {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+}
+
+/* ---------- 播放页 ---------- */
+.player-head {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(247, 247, 245, 0.94);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+  padding: 11px 24px 10px;
+}
+
+.player-head .row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.back {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  text-decoration: none;
+}
+
+.back:hover {
+  color: var(--text);
+  border-color: #c9c6bd;
+}
+
+.player-head h1 {
+  font-size: 14.5px;
+  font-weight: 620;
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-head .sub {
+  font-size: 12px;
+  color: var(--muted);
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 9px;
+  flex-wrap: wrap;
+}
+
+.seg-control {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.seg-control button {
+  border: 0;
+  background: transparent;
+  padding: 5px 11px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.seg-control button.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.seg {
+  padding: 14px 17px 12px;
+  margin-bottom: 10px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.seg.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.seg.done {
+  border-color: #cfe5dc;
+}
+
+.seg .meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+
+.seg .idx {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.seg.done .idx {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.seg .en {
+  font-size: 18px;
+  line-height: 1.5;
+  letter-spacing: 0.2px;
+  margin: 1px 0 10px;
+  outline: none;
+  border-radius: 4px;
+  word-break: break-word;
+}
+
+.seg .en:hover {
+  background: #fbfbf9;
+}
+
+.seg .en:focus {
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.seg.done .en {
+  color: var(--ok);
+}
+
+.seg .acts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rec-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+
+/* ---------- toast ---------- */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  transform: translate(-50%, 14px);
+  background: #2a2a28;
+  color: #fff;
+  font-size: 13px;
+  padding: 9px 16px;
+  border-radius: 9px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 100;
+  max-width: 80vw;
+}
+
+#toast.show {
+  opacity: 0.96;
+  transform: translate(-50%, 0);
+}
+
+#toast.error {
+  background: var(--rec);
+}

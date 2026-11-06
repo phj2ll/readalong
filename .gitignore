@@ -1,0 +1,7 @@
+build/bin/
+frontend/dist/
+frontend/node_modules/
+frontend/wailsjs/
+node_modules/
+*.syso
+.DS_Store

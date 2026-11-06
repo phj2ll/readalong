@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "readalong",
+  "outputfilename": "readalong",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "penghuangjie",
+    "email": "penghuangjie@users.noreply.github.com"
+  },
+  "info": {
+    "companyName": "penghuangjie",
+    "productName": "ReadAlong",
+    "productVersion": "2.0.0",
+    "copyright": "Copyright (c) penghuangjie"
+  }
+}
