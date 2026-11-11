@@ -39,13 +39,20 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
-
-      # 预装 compileSdk 35 需要的组件，避免 Gradle 首次构建时自动下载失败
-      - name: Install Android SDK packages
+      # 不再用 android-actions/setup-android：它是 Node20 动作，GitHub 已不支持。
+      # ubuntu 镜像自带 Android SDK（ANDROID_HOME 已配好），缺的组件自己补。
+      - name: Ensure Android SDK 35
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "SDK=$SDK"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          if [ ! -d "$SDK/platforms/android-35" ]; then
+            SM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+            yes | "$SM" --licenses > /dev/null 2>&1 || true
+            "$SM" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          fi
+          ls "$SDK/platforms"
 
       - uses: gradle/actions/setup-gradle@v4
 
