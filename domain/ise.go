@@ -142,6 +142,15 @@ func parseScore(xml, attr string) float64 {
 	}
 	var v float64
 	fmt.Sscanf(m[1], "%g", &v)
+	return normIseScore(v)
+}
+
+// normIseScore 把讯飞的 0–5 分制折算成百分制（讯飞各项满分是 5.000000，
+// 而前端按 85/70 分档展示，不折算会显示成「4 分」）。
+func normIseScore(v float64) float64 {
+	if v > 0 && v <= 5 {
+		return v * 20
+	}
 	return v
 }
 
@@ -177,9 +186,10 @@ func Assess(pcm []byte, text, lang string, st model.Settings) (model.AssessResul
 			AUE: "raw", AUF: "audio/L16;rate=16000",
 			Category: category, Cmd: "ssb",
 			Ent: ent, Sub: "ise",
-		// 试题文本必须带 [content] 标记（官方文档格式），否则引擎拿不到试题内容，
-	// 送音频时报「SRecWrite error/iSEInputAppend error, ret=8195（音频数据错误）」
-	Text: "\uFEFF[content]" + text,
+		// 试题文本必须带节点标记（官方文档格式），否则引擎拿不到试题内容，
+		// 送音频时报「SRecWrite error/iSEInputAppend error, ret=8195」。
+		// 英文单词题用 [word]、句子/篇章用 [content]，中文按纯文本，详见 iseRefText。
+		Text: iseRefText(text, ent, category),
 			TTE: "utf-8", TPPSkip: true,
 			Rstcd: "utf8", Group: "pupil",
 		},
@@ -251,10 +261,21 @@ func Assess(pcm []byte, text, lang string, st model.Settings) (model.AssessResul
 	if totalScoreRe.FindString(xml) == "" {
 		return zero, fmt.Errorf("录音太短或没有识别到朗读内容")
 	}
+	// 单词题（read_word）的 XML 只有 total/accuracy，缺的项用总分兜底，
+	// 否则界面会显示「流利 0」。
+	total := parseScore(xml, "total")
+	accuracy := parseScore(xml, "accuracy")
+	fluency := parseScore(xml, "fluency")
+	if accuracy == 0 {
+		accuracy = total
+	}
+	if fluency == 0 {
+		fluency = total
+	}
 	return model.AssessResult{
-		Total:     parseScore(xml, "total"),
-		Accuracy:  parseScore(xml, "accuracy"),
-		Fluency:   parseScore(xml, "fluency"),
+		Total:     total,
+		Accuracy:  accuracy,
+		Fluency:   fluency,
 		Integrity: parseScore(xml, "integrity"),
 	}, nil
 }
@@ -308,4 +329,20 @@ func iseEntCategory(text, lang string) (ent, category string) {
 		category = "read_sentence"
 	}
 	return ent, category
+}
+
+// iseRefText 生成试题文本：一律加 UTF-8 BOM 头；英文还必须带节点标记
+// （单词 [word]、句子/篇章 [content]），中文按纯文本。
+// 标记错了讯飞报 48195「实例评测试卷未设置，试题格式错误」，
+// 而表面现象是 seeRec.SRecWrite error: iSEInputAppend error, ret=8195。
+func iseRefText(text, ent, category string) string {
+	marker := ""
+	if ent == "en_vip" {
+		if category == "read_word" {
+			marker = "[word]"
+		} else {
+			marker = "[content]"
+		}
+	}
+	return "\uFEFF" + marker + text
 }

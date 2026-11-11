@@ -55,21 +55,38 @@ function iseEntCategory(text, lang) {
   return { ent, category };
 }
 
+// 试题文本：一律加 UTF-8 BOM 头；英文还必须带节点标记（单词 [word] / 句子·篇章 [content]），
+// 中文按纯文本。标记错了讯飞报 48195「试题格式错误」，表面现象却是
+// seeRec.SRecWrite error: iSEInputAppend error, ret=8195。
+function iseRefText(text, ent, category) {
+  const marker = ent === 'en_vip' ? (category === 'read_word' ? '[word]' : '[content]') : '';
+  return '\uFEFF' + marker + text;
+}
+
 function pickScore(xml, attr) {
   const m = xml.match(new RegExp(`${attr}="([0-9.]+)"`));
   return m ? parseFloat(m[1]) : 0;
 }
 
-// assessWeb 评分：text 参考文本，lang 'en'|'zh'，audioBytes 录音原始字节（webm 等）
-export async function assessWeb(text, lang, audioBytes, settings) {
+// 讯飞返回的各项分数是 0–5 分制（满分 5.000000），前端按百分制分档（85/70），
+// 这里统一折算成百分制，避免出现「4 分」这种展示。
+function normScore(v) {
+  return v > 0 && v <= 5 ? v * 20 : v;
+}
+
+// assessPCM 用现成的 16k 单声道 PCM 送评（和 Go 端 domain/ise.go 完全一致），
+// 单独抽出来是为了能在 Node 里直接跑真机同款链路做验证。
+export async function assessPCM(pcm, text, lang, settings) {
   if (!settings || !settings.appId || !settings.apiKey || !settings.apiSecret) {
     throw new Error('先在设置里填讯飞评测凭据');
   }
-  const pcm = await toPCM16k(audioBytes);
+  if (!pcm || !pcm.byteLength) throw new Error('音频为空');
+
   const { ent, category } = iseEntCategory(text, lang);
 
-  const date = new Date().toUTCString();
-  const origin = `host: ${ISE_HOST}\ndate: ${date}\nPOST ${ISE_PATH} HTTP/1.1`;
+  const date = new Date().toUTCString(); // 已是 "GMT" 结尾，符合讯飞要求
+  // 官方文档：签名原文第三行固定为 GET（不是 POST），写错会鉴权失败
+  const origin = `host: ${ISE_HOST}\ndate: ${date}\nGET ${ISE_PATH} HTTP/1.1`;
   const key = await crypto.subtle.importKey(
     'raw',
     enc.encode(settings.apiSecret),
@@ -86,43 +103,79 @@ export async function assessWeb(text, lang, audioBytes, settings) {
   const url = `wss://${ISE_HOST}${ISE_PATH}?authorization=${encodeURIComponent(auth)}&date=${encodeURIComponent(date)}&host=${ISE_HOST}`;
 
   const ws = new WebSocket(url);
+  let serverErr = null;
+  ws.onmessage = (ev) => {
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.code !== 0 && !serverErr) {
+        serverErr = new Error(`讯飞评测出错（${msg.code}）：${msg.message}`);
+      }
+    } catch (e) {
+      /* 忽略非 JSON */
+    }
+  };
   await new Promise((resolve, reject) => {
-    ws.onopen = resolve;
-    ws.onerror = () => reject(new Error('连接讯飞评测失败'));
-    setTimeout(() => reject(new Error('连接讯飞评测超时')), 15000);
+    const timer = setTimeout(() => reject(new Error('连接讯飞评测超时')), 15000);
+    ws.addEventListener('open', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    ws.addEventListener('error', () => {
+      clearTimeout(timer);
+      reject(new Error('连接讯飞评测失败'));
+    });
   });
 
-  const send = (obj) =>
-    new Promise((resolve, reject) => {
-      ws.onmessage = () => resolve(); // 忽略中间帧
-      ws.send(JSON.stringify(obj));
-      setTimeout(resolve, 60);
-    });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const send = (obj) => {
+    if (serverErr) throw serverErr;
+    ws.send(JSON.stringify(obj));
+  };
 
-  await send({
+  // 第 1 帧 ssb：参考文本放 business.text（BOM + 按题型节点标记，见 iseRefText）。
+  // 键顺序严格复刻官方 demo（讯飞校验器对顺序敏感，顺序错了会报 10163）：
+  // aue, auf, category, cmd, ent, sub, text, tte, ttp_skip, rstcd, group
+  send({
     common: { app_id: settings.appId },
     business: {
-      sub: 'ise', ent, category, cmd: 'ssb',
-      tte: 'utf-8', ttp_skip: true, aue: 'raw', auf: 'audio/L16;rate=16000',
-      rstcmd: 'all', group: 'pupil',
+      aue: 'raw',
+      auf: 'audio/L16;rate=16000',
+      category,
+      cmd: 'ssb',
+      ent,
+      sub: 'ise',
+      text: iseRefText(text, ent, category),
+      tte: 'utf-8',
+      ttp_skip: true,
+      rstcd: 'utf8',
+      group: 'pupil',
     },
-    data: { status: 0, cmd: 'ssb', text: b64(enc.encode(text + '\r\n')) },
+    data: { status: 0 },
   });
+  await sleep(60);
 
-  const frameSize = 1280 * 8;
-  for (let off = 0; off < pcm.byteLength; off += frameSize) {
-    const chunk = pcm.subarray(off, Math.min(off + frameSize, pcm.byteLength));
-    await send({
-      business: { cmd: 'auw', aus: off === 0 ? 1 : 2, tte: 'utf-8' },
-      data: { status: 1, cmd: 'auw', audio: b64(chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength)) },
+  // 第 2..n 帧 auw：16k/16bit/单声道 = 32KB/s，必须按实时速率
+  // 每帧 1280 字节（40ms 音频）+ 40ms 间隔，灌太快会报 ret=8195。
+  // 注意先转成字节视图：Int16Array.subarray 的下标是元素而非字节，直接按字节偏移切会切错。
+  const bytes = new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+  const frameSize = 1280;
+  for (let off = 0, first = true; off < bytes.byteLength; off += frameSize) {
+    const end = Math.min(off + frameSize, bytes.byteLength);
+    send({
+      business: { cmd: 'auw', aus: first ? 1 : 2, aue: 'raw' },
+      // 注意：音频 base64 的键名是 data（不是 audio），与 Go 端 iseReqData.Audio 的 tag 一致
+      data: { status: 1, data: b64(bytes.subarray(off, end)) },
     });
+    first = false;
+    await sleep(40);
   }
-  await send({ business: { cmd: 'auw', aus: 4, tte: 'utf-8' }, data: { status: 2, cmd: 'auw' } });
+  // 最后一帧：结束
+  send({ business: { cmd: 'auw', aus: 4, aue: 'raw' }, data: { status: 2 } });
 
   const xml = await new Promise((resolve, reject) => {
     let result = '';
     const timer = setTimeout(() => reject(new Error('评测超时')), 60000);
-    ws.onmessage = (ev) => {
+    const onMsg = (ev) => {
       let msg;
       try {
         msg = JSON.parse(ev.data);
@@ -134,25 +187,38 @@ export async function assessWeb(text, lang, audioBytes, settings) {
         reject(new Error(`讯飞评测出错（${msg.code}）：${msg.message}`));
         return;
       }
-      if (msg.data && msg.data.data) {
-        result = atob(msg.data.data);
-      }
+      if (msg.data && msg.data.data) result = atob(msg.data.data);
       if (msg.data && msg.data.status === 2) {
         clearTimeout(timer);
         resolve(result);
       }
     };
-    ws.onerror = () => reject(new Error('连接中断'));
+    ws.addEventListener('message', onMsg);
+    ws.addEventListener('error', () => reject(new Error('连接中断')));
   });
   ws.close();
 
   if (!/total_score="[0-9.]+"/.test(xml)) {
     throw new Error('录音太短或没有识别到朗读内容');
   }
+  const total = pickScore(xml, 'total_score');
+  // 单词题（read_word）的 XML 只有 total/accuracy，缺的项用总分兜底，
+  // 否则界面会显示「流利 0」。
+  const accuracy = pickScore(xml, 'accuracy_score') || total;
+  const fluency = pickScore(xml, 'fluency_score') || total;
   return {
-    total: pickScore(xml, 'total_score'),
-    accuracy: pickScore(xml, 'accuracy_score'),
-    fluency: pickScore(xml, 'fluency_score'),
-    integrity: pickScore(xml, 'integrity_score'),
+    total: normScore(total),
+    accuracy: normScore(accuracy),
+    fluency: normScore(fluency),
+    integrity: normScore(pickScore(xml, 'integrity_score')),
   };
+}
+
+// assessWeb 评分：text 参考文本，lang 'en'|'zh'，audioBytes 录音原始字节（webm 等）
+export async function assessWeb(text, lang, audioBytes, settings) {
+  if (!settings || !settings.appId || !settings.apiKey || !settings.apiSecret) {
+    throw new Error('先在设置里填讯飞评测凭据');
+  }
+  const pcm = await toPCM16k(audioBytes);
+  return assessPCM(pcm, text, lang, settings);
 }
