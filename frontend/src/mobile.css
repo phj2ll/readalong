@@ -149,6 +149,17 @@ body.mobile .player-head + .wrap {
   z-index: 1;
 }
 
+/* 书架页的评测凭据状态 */
+body.mobile .ise-state {
+  font-size: 12px;
+  color: #22a06b;
+  padding: 0 2px 10px;
+}
+
+body.mobile .ise-state.bad {
+  color: #d9822b;
+}
+
 /* ---------- 内容容器 ---------- */
 body.mobile .wrap {
   max-width: 560px;

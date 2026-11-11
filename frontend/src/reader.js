@@ -55,15 +55,16 @@ async function importPackage(file) {
   const text = (n) => new TextDecoder().decode(files[n]);
 
   // 课程包里附带了评测凭据（PC 导出时写入 app-settings.json）：自动配置，免手填
+  let credsMsg = '课程包未含评测凭据，可在「评测设置」里手动填一次';
   if (names.includes('app-settings.json')) {
     try {
       const s = JSON.parse(text('app-settings.json'));
       if (s && s.appId && s.apiKey && s.apiSecret) {
         await api.saveSettings({ appId: s.appId, apiKey: s.apiKey, apiSecret: s.apiSecret });
-        toast('已自动配置评测凭据');
+        credsMsg = '已自动配置评测凭据';
       }
     } catch (e) {
-      /* 凭据有问题不影响课程导入 */
+      credsMsg = '评测凭据写入失败：' + (e.message || e);
     }
   }
   // 收集这门课的视频课文件（video-*.mp4）
@@ -121,6 +122,7 @@ async function importPackage(file) {
       return;
     }
     toast(`已导入「${manifest.title}」（${n} 课）`);
+    setTimeout(() => toast(credsMsg, credsMsg.includes('失败') || credsMsg.includes('未含')), 1200);
     location.hash = '#/';
     route();
     return;
@@ -172,6 +174,7 @@ function renderShelf() {
     </div>
     <div class="wrap">
       <div class="section-title">我的书架</div>
+      <div class="ise-state" id="iseState"></div>
       <div id="books" class="courses"></div>
       <p class="rec-hint" style="text-align:center">
         课程包由电脑版 ReadAlong Studio「导出整本书」生成；导入后离线跟读，评分需联网。
@@ -190,6 +193,19 @@ function renderShelf() {
     if (f) await importPackage(f);
   };
   $('#iseSet').onclick = openSettingsModal;
+
+  // 凭据状态一目了然（导入课程包时会自动带上）
+  api
+    .settings()
+    .then((s) => {
+      const ok = !!(s && s.appId && s.apiKey && s.apiSecret);
+      const el = $('#iseState');
+      el.textContent = ok
+        ? '✓ 评测凭据已配置（导入课程包时自动带上）'
+        : '! 评测凭据未配置：导入新版课程包会自动配置，或点右上角「评测设置」手填';
+      el.classList.toggle('bad', !ok);
+    })
+    .catch(() => {});
 
   allCourses()
     .then((courses) => {

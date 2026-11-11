@@ -1078,6 +1078,9 @@ export function renderPlayer(root, courseId) {
     .settings()
     .then((s) => {
       state.iseReady = !!(s && s.appId && s.apiKey && s.apiSecret);
+      // 配置是异步读的，读完刷新底部提示（否则首屏会误报“未配置”）
+      const h = document.getElementById('focusHint');
+      if (h && !state.recording) h.textContent = idleHint();
     })
     .catch(() => {});
 
