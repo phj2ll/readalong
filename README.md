@@ -25,6 +25,8 @@ Windows 单文件桌面应用，Go + Wails v2，前端 Vite（原生 JS，无框
 courses\<id>\audio.wav     课程音频（16k 单声道）
 courses\<id>\data.json     句子 + 时间轴
 courses\<id>\meta.json     课程库卡片信息
+books\<书ID>.json          自定义书名/封面记录
+books\<书ID>.jpg           书籍封面图
 models\ggml-small.en.bin   语音模型
 bin\                       yt-dlp / ffmpeg / whisper-cli
 logs\readalong.log
@@ -58,27 +60,15 @@ go test ./...      # 切句/拼词/控制 token 的单元测试
 并剔除 `[_BEG_]` / `[_TT_250]` 这类控制 token —— 这是最容易出问题的一环，
 `domain/domain_test.go` 用真实识别输出钉住了这个行为。
 
-## 发布
-
-推 `v*` 标签即触发 GitHub Actions（`.github/workflows/release.yml`）：
-ubuntu 上用 Go 1.25 + Node 22 + Wails CLI 交叉编译出 Windows exe，
-直接挂到 Release 里。
-
-```bash
-git tag v2.0.1 && git push origin v2.0.1
-```
-
-版本号会同时写进 `wails.json` 的 `productVersion` 和 exe 的 `-X main.version`。
-
 ## 结构
 
 ```
 config/    运行期目录解析
 model/     前后端共用的数据结构
-store/     课程文件读写（audio.wav + data.json + meta.json）
+store/     课程文件读写（audio.wav + data.json + meta.json），书籍书名/封面
 domain/    业务逻辑：外部工具下载、模型下载、ASR、切句、流水线
 app.go     对前端暴露的绑定方法
-main.go    Wails 启动 + /courses/* 自定义资源处理器
+main.go    Wails 启动 + /courses/*、/books/* 自定义资源处理器
 frontend/  Vite 前端（hash 路由：#/ 课程库，#/play/<id> 练习页）
 ```
 

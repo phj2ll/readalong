@@ -40,13 +40,15 @@ jobs:
         run: wails build -clean -platform windows/amd64 -ldflags "-X main.version=${GITHUB_REF_NAME#v}"
 
       # 同一个 tag 下 Android APK 工作流可能已经先建好 Release，
-      # 这里先判断再建，然后统一用 upload 追加资产（--clobber 覆盖同名文件）
+      # 这里先判断再建，然后统一用 upload 追加资产（--clobber 覆盖同名文件）。
+      # 两个 job 可能同时 create，后到的那次会报 already exists，用 || true 吞掉。
       - name: Create Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 \
-            || gh release create "$GITHUB_REF_NAME" --generate-notes
+            || gh release create "$GITHUB_REF_NAME" --generate-notes \
+            || true
           gh release upload "$GITHUB_REF_NAME" build/bin/readalong.exe --clobber
 
   # ReadAlong Reader：纯前端阅读端，产物 zip（本地打开 / 静态托管均可）
@@ -69,7 +71,14 @@ jobs:
           cd frontend/dist
           zip -r "../../readalong-reader.zip" reader.html assets
 
+      # Release 是 studio job（或 android.yml）建的，而本 job 通常先跑完，
+      # 所以不能直接 upload —— 找不到 Release 会直接失败（v0.1.5~v0.1.8 一直是这个原因）。
+      # 和 studio job 一样：先确保 Release 存在，再上传。
       - name: Upload to Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" readalong-reader.zip --clobber
+        run: |
+          gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --generate-notes \
+            || true
+          gh release upload "$GITHUB_REF_NAME" readalong-reader.zip --clobber
