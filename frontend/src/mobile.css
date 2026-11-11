@@ -16,17 +16,37 @@ body.mobile {
 
 /* ---------- 顶栏（书架 / 书内）：白底 ---------- */
 body.mobile .topbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   background: #fff;
   border-bottom: 0;
   color: #22212b;
-  padding: 10px 14px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 10px;
   box-shadow: none;
 }
 
+/* 标题可压缩，按钮不换行，避免右侧按钮被裁掉 */
 body.mobile .topbar .brand {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #22212b;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
+}
+
+body.mobile .topbar .spacer {
+  display: none;
+}
+
+body.mobile .topbar .btn {
+  flex: none;
+  font-size: 12px;
+  padding: 6px 12px;
+  white-space: nowrap;
 }
 
 body.mobile .topbar .brand em {
@@ -73,7 +93,7 @@ body.mobile .player-head {
   background: #fff;
   border-bottom: 0;
   color: #22212b;
-  padding: 8px 14px 14px;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) 14px 14px;
   box-shadow: none;
 }
 
