@@ -92,7 +92,23 @@ jobs:
           path: out/*.apk
           retention-days: 30
 
-      # 打 tag 时顺手发 Release，手机上直接点链接安装
+      # push main：滚动更新一个 tag=latest 的预发布 Release，
+      # 手机上打开 Releases 页或固定链接就能直接下载安装
+      - name: Publish rolling release (main)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: 最新构建（自动）
+          body: |
+            提交：${{ github.sha }}
+            构建号：${{ github.run_number }}
+            内容：Android debug APK，覆盖安装即可升级。
+          files: out/*.apk
+          prerelease: true
+          make_latest: false
+
+      # 打 v* 标签：发布正式 Release（带自动 release notes）
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/v')
         with:
