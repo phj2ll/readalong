@@ -102,7 +102,8 @@ export function renderPlayer(root, courseId) {
     const dx = e.clientX - swipeX;
     const dy = e.clientY - swipeY;
     if (Math.abs(dx) > 40 && Math.abs(dy) < 80) {
-      focusGo(state.focusPos + (dx > 0 ? 1 : -1), true); // 右滑下一个，左滑上一个
+      // 手指从右往左滑（dx<0）= 下一个；从左往右滑 = 上一个
+      focusGo(state.focusPos + (dx < 0 ? 1 : -1), true);
     }
   });
   listEl.addEventListener('pointercancel', () => {
