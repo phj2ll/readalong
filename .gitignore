@@ -16,5 +16,9 @@ mobile/android/local.properties
 mobile/android/capacitor-cordova-android-plugins/
 *.syso
 *.keystore
+*.jks
 .DS_Store
-.gitmsgn
+# release 签名密钥库（私钥，绝不入库）
+mobile/keystore/
+.gitmsg
+.gitmsg.txt

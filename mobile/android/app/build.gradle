@@ -17,10 +17,26 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // 发布签名：CI 用 -PstoreFile / -PstorePassword / -PkeyAlias / -PkeyPassword 注入。
+    // 用正式证书签名（非 Android Debug 证书），否则 vivo 等 ROM 会拒绝安装并提示
+    // 「安装包缺乏开发者证书」。没有注入时保持未签名，回退到 debug 包。
+    signingConfigs {
+        if (project.hasProperty('storeFile') && file(project.property('storeFile')).exists()) {
+            release {
+                storeFile file(project.property('storeFile'))
+                storePassword project.property('storePassword')
+                keyAlias project.property('keyAlias')
+                keyPassword project.property('keyPassword')
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (signingConfigs.findByName('release') != null) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

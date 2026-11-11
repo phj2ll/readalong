@@ -70,21 +70,42 @@ jobs:
           npm ci
           npx cap sync android
 
-      # 出包：debug 包可直接安装（未签名发布配置也能装）
-      # versionCode 用 run_number 自增，versionName 带提交短 SHA，方便区分每次构建
+      # 出包：优先用正式证书签名的 release 包。
+      # debug 包用的是 Android 调试证书，vivo 等 ROM 会以
+      # 「安装包缺乏开发者证书」拒绝安装，所以必须走 release 签名。
+      # 密钥库放在仓库 Secret（ANDROID_KEYSTORE_B64）里，不入库。
       - name: Build APK
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PW: ReadAlong2026Sign
         run: |
           cd mobile/android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon \
-            -PversionCode=${{ github.run_number }} \
-            -PversionName="0.1.${{ github.run_number }}"
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "使用正式证书签名（release）"
+            mkdir -p "$RUNNER_TEMP"
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/readalong.jks"
+            ./gradlew assembleRelease --no-daemon \
+              -PversionCode=${{ github.run_number }} \
+              -PversionName="0.1.${{ github.run_number }}" \
+              -PstoreFile="$RUNNER_TEMP/readalong.jks" \
+              -PstorePassword="$KEYSTORE_PW" \
+              -PkeyAlias=readalong \
+              -PkeyPassword="$KEYSTORE_PW"
+            echo "APK_PATH=mobile/android/app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_ENV"
+          else
+            echo "::warning::未配置 ANDROID_KEYSTORE_B64，构建的是 debug 包（vivo 等 ROM 会拒装）"
+            ./gradlew assembleDebug --no-daemon \
+              -PversionCode=${{ github.run_number }} \
+              -PversionName="0.1.${{ github.run_number }}"
+            echo "APK_PATH=mobile/android/app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_ENV"
+          fi
 
       - name: Rename APK
         run: |
           mkdir -p out
-          cp mobile/android/app/build/outputs/apk/debug/app-debug.apk \
-             "out/ReadAlong-${{ github.sha }}.apk"
+          cp "$APK_PATH" "out/ReadAlong-${{ github.sha }}.apk"
+          ls -la out/
 
       - uses: actions/upload-artifact@v4
         with:
