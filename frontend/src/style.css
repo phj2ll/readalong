@@ -862,13 +862,15 @@ body.video-open {
   z-index: 90;
 }
 
-#iseModal, #bookModal .modal-mask {
+#iseModal .modal-mask,
+#bookModal .modal-mask {
   position: absolute;
   inset: 0;
   background: rgba(31, 31, 29, 0.35);
 }
 
-#iseModal, #bookModal .modal {
+#iseModal .modal,
+#bookModal .modal {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -881,27 +883,31 @@ body.video-open {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.14);
 }
 
-#iseModal, #bookModal .modal h2 {
+#iseModal .modal h2,
+#bookModal .modal h2 {
   font-size: 15.5px;
   font-weight: 650;
   margin: 0 0 6px;
 }
 
-#iseModal, #bookModal .modal .hint {
+#iseModal .modal .hint,
+#bookModal .modal .hint {
   font-size: 12px;
   color: var(--muted);
   margin: 0 0 14px;
   line-height: 1.6;
 }
 
-#iseModal, #bookModal .modal label {
+#iseModal .modal label,
+#bookModal .modal label {
   display: block;
   font-size: 12.5px;
   color: var(--muted);
   margin-bottom: 10px;
 }
 
-#iseModal, #bookModal .modal input {
+#iseModal .modal input,
+#bookModal .modal input {
   display: block;
   width: 100%;
   margin-top: 4px;
@@ -916,13 +922,15 @@ body.video-open {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-#iseModal, #bookModal .modal input:focus {
+#iseModal .modal input:focus,
+#bookModal .modal input:focus {
   border-color: var(--accent);
   background: #fff;
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-#iseModal, #bookModal .modal-acts {
+#iseModal .modal-acts,
+#bookModal .modal-acts {
   display: flex;
   justify-content: flex-end;
   gap: 8px;

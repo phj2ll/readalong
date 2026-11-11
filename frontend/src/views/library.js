@@ -34,11 +34,21 @@ export function openSettingsModal() {
     el.querySelector('#iseKey').value = s.apiKey || '';
     el.querySelector('#iseSecret').value = s.apiSecret || '';
   };
+  // 关闭时顺带摘掉 Esc 监听，避免每开一次就叠一个
+  const onEsc = (e) => {
+    if (e.key === 'Escape') close();
+  };
+  function close() {
+    el.style.display = 'none';
+    window.removeEventListener('keydown', onEsc);
+  }
+
   load.then(fill);
   el.style.display = 'block';
   fill();
-  el.querySelector('.modal-mask').onclick = () => (el.style.display = 'none');
-  el.querySelector('#iseCancel').onclick = () => (el.style.display = 'none');
+  window.addEventListener('keydown', onEsc);
+  el.querySelector('.modal-mask').onclick = close;
+  el.querySelector('#iseCancel').onclick = close;
   el.querySelector('#iseSave').onclick = async () => {
     try {
       await api.saveSettings({
@@ -46,7 +56,7 @@ export function openSettingsModal() {
         apiKey: el.querySelector('#iseKey').value.trim(),
         apiSecret: el.querySelector('#iseSecret').value.trim(),
       });
-      el.style.display = 'none';
+      close();
       toast('评测设置已保存');
     } catch (e) {
       toast(String(e && e.message ? e.message : e), true);

@@ -175,6 +175,8 @@ func Assess(pcm []byte, text, lang string, st model.Settings) (model.AssessResul
 		return zero, fmt.Errorf("连接讯飞评测失败：%w", err)
 	}
 	defer conn.Close()
+	// 写截止时间只在这里设一次的话，音频按实时速率送（1280B/40ms），
+	// 超过约 30 秒的录音后面每一帧都会 i/o timeout；所以每帧写之前重新计时。
 	_ = conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
@@ -213,6 +215,8 @@ func Assess(pcm []byte, text, lang string, st model.Settings) (model.AssessResul
 			aus = 1
 			first = false
 		}
+		// 每帧重新计写超时：整段音频按实时速率发送，长录音要几十秒
+		_ = conn.SetWriteDeadline(time.Now().Add(15 * time.Second))
 		if err := conn.WriteJSON(iseReq{
 			Business: &iseAUWBiz{Cmd: "auw", Aus: aus, AUE: "raw"},
 			Data: &iseReqData{
@@ -298,6 +302,7 @@ func iseDial(st model.Settings) (*websocket.Conn, error) {
 	d := websocket.Dialer{HandshakeTimeout: 15 * time.Second}
 	conn, resp, err := d.Dial(u, nil)
 	if err != nil && resp != nil {
+		defer resp.Body.Close()
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, fmt.Errorf("HTTP %d：%s", resp.StatusCode, string(body))
 	}

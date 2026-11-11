@@ -19,6 +19,7 @@ export function renderPlayer(root, courseId) {
     stopAt: 0,
     onEnd: null,
     recording: false,
+    recStarting: false, // 正在等麦克风授权（防连点开两个录音）
     recorder: null,
     chunks: [],
     stream: null,
@@ -34,7 +35,19 @@ export function renderPlayer(root, courseId) {
     ringTimer: null,
     waveTimer: null,
     autoNextTimer: null,
+    timers: new Set(), // 一次性定时器，路由切走时统一清掉
+    vidTimer: null, // 视频课下载进度轮询
   };
+
+  // 统一登记一次性定时器：路由切走后这些回调不该再操作已经销毁的页面
+  function later(fn, ms) {
+    const id = setTimeout(() => {
+      state.timers.delete(id);
+      fn();
+    }, ms);
+    state.timers.add(id);
+    return id;
+  }
 
   const keyDone = `ra.done.${courseId}`;
   const keyEdits = `ra.edits.${courseId}`;
@@ -210,7 +223,7 @@ export function renderPlayer(root, courseId) {
         return;
       }
       if (state.mode === 'auto' && i + 1 < state.data.segments.length) {
-        setTimeout(() => playSegment(i + 1), 420);
+        later(() => playSegment(i + 1), 420);
       }
     });
   }
@@ -222,7 +235,7 @@ export function renderPlayer(root, courseId) {
         stopRec();
       } else {
         stopRec();
-        setTimeout(() => practice(i), 120);
+        later(() => practice(i), 120);
       }
       return;
     }
@@ -257,17 +270,22 @@ export function renderPlayer(root, courseId) {
       stopRec();
       return;
     }
+    // 连点保护：getUserMedia 是异步的，等待期间 recording 仍是 false，
+    // 不挡住会并发开两个录音（一个流被覆盖后麦克风常开，且录到错误的句子）
+    if (state.recStarting) return;
     stopAudio(); // 录音时不能让原音还开着
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       toast('当前环境不支持录音', true);
       return;
     }
+    state.recStarting = true;
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
     } catch (e) {
+      state.recStarting = false;
       toast('麦克风不可用，检查系统权限后重试', true);
       return;
     }
@@ -289,12 +307,13 @@ export function renderPlayer(root, courseId) {
       markDone(idx);
       if (state.iseReady) assess(idx, blob);
       if (state.mode === 'ab') {
-        setTimeout(() => playMine(idx), 400); // A/B 对比：录完自动放你的录音
+        later(() => playMine(idx), 400); // A/B 对比：录完自动放你的录音
       }
     };
 
     state.recorder.start();
     state.recording = true;
+    state.recStarting = false;
     const seg = state.data.segments[i];
     // 自动停：原句时长的 1.5 倍再留 2.5 秒，最短 4 秒
     const limit = Math.max(4000, (seg.end - seg.start) * 1000 * 1.5 + 2500);
@@ -334,8 +353,13 @@ export function renderPlayer(root, courseId) {
     });
   }
 
+  // 按 data-i 找句子：任务筛选视图下列表只渲染部分句子，用数组下标会标错行
+  function segEl(i) {
+    return listEl.querySelector(`.seg[data-i="${i}"]`);
+  }
+
   function markDone(i) {
-    const el = listEl.querySelectorAll('.seg')[i];
+    const el = segEl(i);
     if (el) el.classList.add('done');
   }
 
@@ -353,7 +377,7 @@ export function renderPlayer(root, courseId) {
   }
 
   function updateScoreBadge(i) {
-    const el = listEl.querySelectorAll('.seg')[i];
+    const el = segEl(i);
     if (!el) return;
     const chip = el.querySelector('[data-score]');
     if (!chip) return;
@@ -647,6 +671,7 @@ export function renderPlayer(root, courseId) {
           }
         }
       }, 1000);
+      state.vidTimer = timer; // 路由切走时由 cleanup 停掉
     };
   }
 
@@ -824,7 +849,7 @@ export function renderPlayer(root, courseId) {
       <div class="focus" data-i="${i}">
         <div class="focus-card">
           <span class="ai-tag">${esc(state.taskLabel || '跟读')}</span>
-          <div class="focus-text" contenteditable="true" spellcheck="false">${esc(text)}</div>
+          <div class="focus-text" contenteditable="${isMobileView() ? 'false' : 'true'}" spellcheck="false">${esc(text)}</div>
           <div class="focus-score" id="focusScore">${focusScoreHtml(i)}</div>
         </div>
         <div class="focus-btns">
@@ -872,7 +897,7 @@ export function renderPlayer(root, courseId) {
     highlight(i);
 
     if (state.recording && state.recIndex === i) beginRing(0);
-    else if (autoplay) setTimeout(() => playSegment(i), 150);
+    else if (autoplay) later(() => playSegment(i), 150);
   }
 
   function focusGo(pos, autoplay) {
@@ -1200,6 +1225,9 @@ export function renderPlayer(root, courseId) {
       videoEl = null;
     }
     clearTimeout(state.autoNextTimer);
+    for (const id of state.timers) clearTimeout(id);
+    state.timers.clear();
+    if (state.vidTimer) clearInterval(state.vidTimer);
     if (state.ringTimer) clearInterval(state.ringTimer);
     if (state.waveTimer) clearInterval(state.waveTimer);
     stopRec();

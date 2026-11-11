@@ -39,6 +39,11 @@ function run(store, mode, fn) {
           db.close();
           reject(t.error);
         };
+        // 事务被中止（如写入 QuotaExceeded）时，只监听 onerror 会永远挂起
+        t.onabort = () => {
+          db.close();
+          reject(t.error || new Error('IndexedDB 事务被中止'));
+        };
       })
   );
 }

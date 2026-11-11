@@ -403,7 +403,8 @@ func (a *App) runBatch(j *jobState, rawURL, lang string, pages []domain.PageInfo
 		res, err := domain.RunGrouped(rawURL, cid, lang, g.Label, g.Pages, op)
 		if err == nil {
 			res.Course.BookID = store.BaseBV(rawURL)
-			res.Course.BookTitle = domain.SeriesOf(domain.CleanTitle(pages[0].Title))
+			// 用本分组的第一页取系列名；pages[0] 是整本书第 1 个分 P（可能是被跳过的视频课）
+			res.Course.BookTitle = domain.SeriesOf(domain.CleanTitle(g.Pages[0].Title))
 			// 教学视频课：下载成 mp4 放进课程目录（失败不影响课程，回退在线播放）
 			for _, v := range g.Videos {
 				ref := model.VideoRef{Title: v.Title, Page: v.Page}

@@ -100,8 +100,15 @@ func BaseBV(rawURL string) string {
 	return ""
 }
 
-// ValidID 校验课程 id，防目录穿越。
-func ValidID(id string) bool { return idRe.MatchString(id) }
+// ValidID 校验课程/书籍 id，防目录穿越。
+// 注意 "." 和 ".." 也满足 idRe（点号在白名单里），必须单独挡掉：
+// 否则 DeleteCourse("..") 会 RemoveAll 掉整个数据根目录。
+func ValidID(id string) bool {
+	if id == "." || id == ".." || strings.Contains(id, "..") {
+		return false
+	}
+	return idRe.MatchString(id)
+}
 
 // Save 把课程写到磁盘：audio.wav + data.json + meta.json。
 func Save(c model.Course, wavPath string) error {

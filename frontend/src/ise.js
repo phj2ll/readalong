@@ -172,31 +172,41 @@ export async function assessPCM(pcm, text, lang, settings) {
   // 最后一帧：结束
   send({ business: { cmd: 'auw', aus: 4, aue: 'raw' }, data: { status: 2 } });
 
-  const xml = await new Promise((resolve, reject) => {
-    let result = '';
-    const timer = setTimeout(() => reject(new Error('评测超时')), 60000);
-    const onMsg = (ev) => {
-      let msg;
-      try {
-        msg = JSON.parse(ev.data);
-      } catch (e) {
-        return;
-      }
-      if (msg.code !== 0) {
-        clearTimeout(timer);
-        reject(new Error(`讯飞评测出错（${msg.code}）：${msg.message}`));
-        return;
-      }
-      if (msg.data && msg.data.data) result = atob(msg.data.data);
-      if (msg.data && msg.data.status === 2) {
-        clearTimeout(timer);
-        resolve(result);
-      }
-    };
-    ws.addEventListener('message', onMsg);
-    ws.addEventListener('error', () => reject(new Error('连接中断')));
-  });
-  ws.close();
+  let xml;
+  try {
+    xml = await new Promise((resolve, reject) => {
+      let result = '';
+      const timer = setTimeout(() => reject(new Error('评测超时')), 60000);
+      const onMsg = (ev) => {
+        let msg;
+        try {
+          msg = JSON.parse(ev.data);
+        } catch (e) {
+          return;
+        }
+        if (msg.code !== 0) {
+          clearTimeout(timer);
+          reject(new Error(`讯飞评测出错（${msg.code}）：${msg.message}`));
+          return;
+        }
+        if (msg.data && msg.data.data) result = atob(msg.data.data);
+        if (msg.data && msg.data.status === 2) {
+          clearTimeout(timer);
+          resolve(result);
+        }
+      };
+      ws.addEventListener('message', onMsg);
+      ws.addEventListener('error', () => reject(new Error('连接中断')));
+    });
+  } finally {
+    // 成功、超时、服务端报错都要断开：原来只在成功路径 close，
+    // 出错时连接会一直挂着，长时间反复录音会堆积
+    try {
+      ws.close();
+    } catch (e) {
+      /* 可能已经关了 */
+    }
+  }
 
   if (!/total_score="[0-9.]+"/.test(xml)) {
     throw new Error('录音太短或没有识别到朗读内容');

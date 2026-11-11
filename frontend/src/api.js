@@ -13,6 +13,9 @@ function bridge() {
 
 const SETTINGS_KEY = 'ra.reader.settings';
 
+// Reader 模式下课程音频的 Blob URL 缓存：课程 id → object URL，避免重复创建泄漏
+const audioUrls = new Map();
+
 // u8ToB64 把录音字节编码成 base64（Wails 传参走 JSON，只能传字符串）。
 function u8ToB64(u8) {
   let s = '';
@@ -58,12 +61,25 @@ const webApi = {
     idb.get(id).then((c) => {
       if (!c) throw new Error('课程不存在，可能已被删除');
       const data = c.data || {};
-      // 播放器通过 data.audio 拿音频地址，Reader 模式给 Blob URL
-      return { ...data, audio: URL.createObjectURL(c.audioBlob) };
+      // 播放器通过 data.audio 拿音频地址，Reader 模式给 Blob URL。
+      // 缓存起来：每进一次课程都 createObjectURL 会让整段 WAV 一直留在内存里
+      let url = audioUrls.get(id);
+      if (!url) {
+        url = URL.createObjectURL(c.audioBlob);
+        audioUrls.set(id, url);
+      }
+      return { ...data, audio: url };
     }),
   create: () => notInReader('课程生成'),
   job: () => Promise.resolve({ status: 'done' }),
-  del: (id) => idb.del(id),
+  del: (id) => {
+    const url = audioUrls.get(id);
+    if (url) {
+      URL.revokeObjectURL(url);
+      audioUrls.delete(id);
+    }
+    return idb.del(id);
+  },
   openDataDir: () => notInReader('数据目录'),
   openURL: (u) => {
     window.open(u, '_blank');

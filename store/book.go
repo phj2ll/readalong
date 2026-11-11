@@ -133,16 +133,32 @@ func RenameBook(bookID, title string) error {
 		if json.Unmarshal(raw, &m) != nil || m.ID == "" {
 			continue
 		}
-		if m.BookTitle == title {
-			continue
+		if m.BookTitle != title || m.BookID == "" {
+			m.BookTitle = title
+			if m.BookID == "" {
+				m.BookID = bookID
+			}
+			_ = writeJSON(metaPath, m)
 		}
-		m.BookTitle = title
-		if m.BookID == "" {
-			m.BookID = bookID
-		}
-		_ = writeJSON(metaPath, m)
+		// data.json 里的 Course 也带 bookTitle，手机端导入后 bookOf() 优先读它，
+		// 不同步的话 App 里会显示旧书名
+		syncCourseBookTitle(filepath.Join(config.CoursesDir, e.Name(), "data.json"), title)
 	}
 	return nil
+}
+
+// syncCourseBookTitle 把课程 data.json 里的 bookTitle 改成 title。
+func syncCourseBookTitle(path, title string) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var data model.Course
+	if json.Unmarshal(raw, &data) != nil || data.ID == "" || data.BookTitle == title {
+		return
+	}
+	data.BookTitle = title
+	_ = writeJSON(path, data)
 }
 
 // SetBookCover 把用户选的图片拷进 books 目录作为这本书的封面。

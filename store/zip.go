@@ -69,7 +69,7 @@ func bookCourses(bookID string) ([]model.CourseSummary, string, error) {
 
 // ZipBook 把一本书的全部课程打成一个课程包（一次导出、一次导入）。
 // 结构：book.json + <课程ID>/data.json + <课程ID>/audio.wav
-func ZipBook(bookID, dest string) error {
+func ZipBook(bookID, dest string) (err error) {
 	summary, _, err := bookCourses(bookID)
 	if err != nil {
 		return err
@@ -78,8 +78,15 @@ func ZipBook(bookID, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 	zw := zip.NewWriter(f)
+	// 中途失败时清掉半截 zip，别在用户选的路径上留一个打不开的文件
+	defer func() {
+		if err != nil {
+			_ = zw.Close()
+			_ = f.Close()
+			_ = os.Remove(dest)
+		}
+	}()
 
 	write := func(name string, b []byte) error {
 		w, err := zw.Create(name)
@@ -144,8 +151,8 @@ func ZipBook(bookID, dest string) error {
 		}
 	}
 
-	if err := zw.Close(); err != nil {
-		return err
+	if cerr := zw.Close(); cerr != nil {
+		return cerr
 	}
 	return f.Close()
 }
@@ -165,13 +172,20 @@ func coverOf(bookID string) (string, []byte) {
 
 // ZipBookInfo 只打包书名和封面（通常几百 KB），用于改完书名/封面后快速同步到手机，
 // 不必重传整本书的音频和视频。手机端识别 infoOnly 后只刷新书架信息。
-func ZipBookInfo(bookID, dest string) error {
+func ZipBookInfo(bookID, dest string) (err error) {
 	f, err := os.Create(dest)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 	zw := zip.NewWriter(f)
+	// 中途失败时清掉半截 zip
+	defer func() {
+		if err != nil {
+			_ = zw.Close()
+			_ = f.Close()
+			_ = os.Remove(dest)
+		}
+	}()
 	write := func(name string, b []byte) error {
 		w, err := zw.Create(name)
 		if err != nil {
@@ -198,8 +212,8 @@ func ZipBookInfo(bookID, dest string) error {
 			return err
 		}
 	}
-	if err := zw.Close(); err != nil {
-		return err
+	if cerr := zw.Close(); cerr != nil {
+		return cerr
 	}
 	return f.Close()
 }
