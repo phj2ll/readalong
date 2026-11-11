@@ -736,14 +736,6 @@ body.video-open {
   text-overflow: ellipsis;
 }
 
-#videoModal .video-web {
-  flex: none;
-  color: rgba(255, 255, 255, 0.58);
-  font-size: 12px;
-  text-decoration: none;
-  padding: 6px 6px;
-}
-
 #videoModal .video-stage {
   flex: 1;
   min-height: 0;
