@@ -17,3 +17,4 @@ mobile/android/capacitor-cordova-android-plugins/
 *.syso
 *.keystore
 .DS_Store
+.gitmsgn

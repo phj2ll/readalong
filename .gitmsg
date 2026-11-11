@@ -1,5 +1,0 @@
-ci(android): drop android-actions/setup-android (Node20 action no longer supported)
-
-The setup-android action failed at step 5 and everything after was skipped.
-ubuntu-latest already ships the Android SDK, so only probe/install the
-missing platform 35 and build-tools with the bundled sdkmanager.
