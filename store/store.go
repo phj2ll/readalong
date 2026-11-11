@@ -21,29 +21,39 @@ var (
 	slugRe = regexp.MustCompile(`[^0-9A-Za-z_.-]`)
 )
 
-// CourseIDFromURL 生成稳定的课程目录名，同一个分 P 命中同一个目录。
-func CourseIDFromURL(rawURL string) string {
+// baseID 只算稳定目录名，不处理已存在的情况。suffix 形如 p21 / u1。
+func baseID(rawURL, suffix string) string {
 	bv := "v"
 	if m := bvRe.FindStringSubmatch(rawURL); m != nil {
 		bv = "BV" + m[1]
 	}
-	p := ""
-	if i := strings.Index(rawURL, "?"); i >= 0 {
-		q := rawURL[i+1:]
-		if j := strings.Index(q, "#"); j >= 0 {
-			q = q[:j]
-		}
-		for _, kv := range strings.Split(q, "&") {
-			if strings.HasPrefix(kv, "p=") {
-				p = strings.TrimPrefix(kv, "p=")
-			}
-		}
-	}
 	base := bv
-	if p != "" {
-		base = bv + "_p" + p
+	if suffix != "" {
+		base = bv + "_" + suffix
 	}
-	base = slugRe.ReplaceAllString(base, "")
+	return slugRe.ReplaceAllString(base, "")
+}
+
+func pageSuffix(rawURL string) string {
+	i := strings.Index(rawURL, "?")
+	if i < 0 {
+		return ""
+	}
+	q := rawURL[i+1:]
+	if j := strings.Index(q, "#"); j >= 0 {
+		q = q[:j]
+	}
+	for _, kv := range strings.Split(q, "&") {
+		if strings.HasPrefix(kv, "p=") {
+			return "p" + strings.TrimPrefix(kv, "p=")
+		}
+	}
+	return ""
+}
+
+// CourseIDFromURL 生成稳定的课程目录名，同一个分 P 命中同一个目录。
+func CourseIDFromURL(rawURL string) string {
+	base := baseID(rawURL, pageSuffix(rawURL))
 
 	cid := base
 	for i := 2; DirExists(filepath.Join(config.CoursesDir, cid)) &&
@@ -54,6 +64,40 @@ func CourseIDFromURL(rawURL string) string {
 		cid = base + "_" + time.Now().Format("150405")
 	}
 	return cid
+}
+
+// CourseIDForPage 按分 P 序号算目录名，给批量生成用，永远不带时间后缀。
+func CourseIDForPage(rawURL string, page int) string {
+	return baseID(rawURL, "p"+strconv.Itoa(page))
+}
+
+// CourseIDForGroup 按分组后缀（如 u1）算目录名。
+func CourseIDForGroup(rawURL, suffix string) string {
+	return baseID(rawURL, suffix)
+}
+
+// CourseExists 判断课程是否已经生成过。
+func CourseExists(id string) bool {
+	return FileExists(filepath.Join(config.CoursesDir, id, "data.json"))
+}
+
+// bookRe 从课程 ID 里提取书 ID（同一主链接的前缀，如 BV1qR4fesEm6_u1 → BV1qR4fesEm6）。
+var bookRe = regexp.MustCompile(`^(BV[0-9A-Za-z]+)`)
+
+// BookIDOf 从课程 ID 推导书 ID，老课程没有 bookId 字段时用它归组。
+func BookIDOf(courseID string) string {
+	if m := bookRe.FindStringSubmatch(courseID); m != nil {
+		return m[1]
+	}
+	return courseID
+}
+
+// BaseBV 从链接里取 BV 号，作为书 ID。
+func BaseBV(rawURL string) string {
+	if m := bvRe.FindStringSubmatch(rawURL); m != nil {
+		return "BV" + m[1]
+	}
+	return ""
 }
 
 // ValidID 校验课程 id，防目录穿越。
@@ -76,15 +120,26 @@ func Save(c model.Course, wavPath string) error {
 		return err
 	}
 	meta := model.CourseSummary{
-		ID:       c.ID,
-		Title:    c.Title,
-		Source:   c.Source,
-		Uploader: c.Uploader,
-		Duration: c.Duration,
-		Count:    len(c.Segments),
-		Created:  c.Created,
+		ID:        c.ID,
+		Title:     c.Title,
+		Source:    c.Source,
+		Uploader:  c.Uploader,
+		Duration:  c.Duration,
+		Count:     len(c.Segments),
+		Created:   c.Created,
+		BookID:    c.BookID,
+		BookTitle: c.BookTitle,
 	}
 	return writeJSON(filepath.Join(dir, "meta.json"), meta)
+}
+
+// SaveData 只重写课程的数据文件（不动音频），用于视频课补下载等增量更新。
+func SaveData(c model.Course) error {
+	dir := filepath.Join(config.CoursesDir, c.ID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return writeJSON(filepath.Join(dir, "data.json"), c)
 }
 
 // List 按创建时间倒序返回全部课程摘要。

@@ -26,6 +26,23 @@ const (
 	userAgent  = "ReadAlong"
 )
 
+// ghMirrors 是 GitHub 加速代理。国内直连 github.com 经常被重置（wsarecv:
+// connection forcibly closed），直连失败后逐个尝试这些前缀镜像。
+var ghMirrors = []string{
+	"https://gh-proxy.com/",
+	"https://ghfast.top/",
+}
+
+// ghURLs 返回 [直连, 镜像1, 镜像2, ...] 的候选地址列表。
+func ghURLs(url string) []string {
+	out := make([]string, 0, 1+len(ghMirrors))
+	out = append(out, url)
+	for _, m := range ghMirrors {
+		out = append(out, m+url)
+	}
+	return out
+}
+
 // toolSpec 描述一个外部程序的获取方式。
 type toolSpec struct {
 	key   string
@@ -62,20 +79,20 @@ func pickWhisper(name string) (string, bool) {
 }
 
 func specYTDLP() toolSpec {
-	return toolSpec{key: "yt-dlp", label: "yt-dlp", exe: "yt-dlp.exe", urls: []string{urlYTDLP}}
+	return toolSpec{key: "yt-dlp", label: "yt-dlp", exe: "yt-dlp.exe", urls: ghURLs(urlYTDLP)}
 }
 
 func specFFmpeg() toolSpec {
 	return toolSpec{
 		key: "ffmpeg", label: "ffmpeg", exe: "ffmpeg.exe", zip: true,
-		urls: []string{urlFFmpeg, urlFFmpegB}, pick: pickFFmpeg,
+		urls: append(ghURLs(urlFFmpeg), ghURLs(urlFFmpegB)...), pick: pickFFmpeg,
 	}
 }
 
 func specWhisper() toolSpec {
 	return toolSpec{
 		key: "whisper", label: "whisper.cpp", exe: "whisper-cli.exe", zip: true,
-		urls: []string{urlWhisper}, pick: pickWhisper,
+		urls: ghURLs(urlWhisper), pick: pickWhisper,
 	}
 }
 

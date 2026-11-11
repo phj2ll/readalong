@@ -1,0 +1,11 @@
+{
+  "appId": "com.phj2ll.readalong",
+  "appName": "ReadAlong",
+  "webDir": "../frontend/dist-mobile",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

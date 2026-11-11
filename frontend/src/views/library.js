@@ -1,5 +1,59 @@
 import { api, esc, fmtTime, toast } from '../api.js';
 
+// 评测设置弹窗（桌面版和 Reader 共用）
+export function openSettingsModal() {
+  let s = { appId: '', apiKey: '', apiSecret: '' };
+  const load = api
+    .settings()
+    .then((v) => {
+      s = { ...s, ...v };
+    })
+    .catch(() => {});
+
+  let el = document.getElementById('iseModal');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'iseModal';
+    el.innerHTML = `
+      <div class="modal-mask"></div>
+      <div class="modal">
+        <h2>讯飞语音评测设置</h2>
+        <p class="hint">在 console.xfyun.cn 的「语音评测（流式版）」服务里获取。配置后，练习页录完音会自动打分。</p>
+        <label>APPID<input type="text" id="iseAppId" spellcheck="false" autocomplete="off" /></label>
+        <label>APIKey<input type="text" id="iseKey" spellcheck="false" autocomplete="off" /></label>
+        <label>APISecret<input type="password" id="iseSecret" spellcheck="false" autocomplete="off" /></label>
+        <div class="modal-acts">
+          <button class="btn" id="iseCancel">取消</button>
+          <button class="btn primary" id="iseSave">保存</button>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+  }
+  const fill = () => {
+    el.querySelector('#iseAppId').value = s.appId || '';
+    el.querySelector('#iseKey').value = s.apiKey || '';
+    el.querySelector('#iseSecret').value = s.apiSecret || '';
+  };
+  load.then(fill);
+  el.style.display = 'block';
+  fill();
+  el.querySelector('.modal-mask').onclick = () => (el.style.display = 'none');
+  el.querySelector('#iseCancel').onclick = () => (el.style.display = 'none');
+  el.querySelector('#iseSave').onclick = async () => {
+    try {
+      await api.saveSettings({
+        appId: el.querySelector('#iseAppId').value.trim(),
+        apiKey: el.querySelector('#iseKey').value.trim(),
+        apiSecret: el.querySelector('#iseSecret').value.trim(),
+      });
+      el.style.display = 'none';
+      toast('评测设置已保存');
+    } catch (e) {
+      toast(String(e && e.message ? e.message : e), true);
+    }
+  };
+}
+
 export function renderLibrary(root) {
   let disposers = [];
   let modelTimer = null;
@@ -13,6 +67,7 @@ export function renderLibrary(root) {
       <div class="spacer"></div>
       <span class="chip" id="modelChip">语音模型检查中…</span>
       <button class="btn small" id="openData">数据目录</button>
+      <button class="btn small" id="iseSet">评测设置</button>
     </div>
     <div class="wrap">
       <div class="card create">
@@ -92,25 +147,66 @@ export function renderLibrary(root) {
 
   $('#openData').onclick = () => api.openDataDir().catch((e) => toast(String(e), true));
 
-  // -------- 课程列表 --------
+  // -------- 评测设置（共用弹窗） --------
+  $('#iseSet').onclick = openSettingsModal;
+
+  // -------- 课程列表（按书分组） --------
+  // 老课程没有 bookId 字段，按课程 ID 的 BV 前缀归组
+  function bookOf(c) {
+    const bid = c.bookId || (String(c.id).match(/^(BV[0-9A-Za-z]+)/) || [])[1] || c.id;
+    let btitle = c.bookTitle || '';
+    if (!btitle && c.title && c.title.includes('·')) {
+      btitle = c.title.split('·').pop().trim();
+    }
+    let label = c.title || c.id;
+    if (label.includes('·')) label = label.split('·')[0].trim();
+    return { bid, btitle: btitle || bid, label };
+  }
+
   function renderCourses(list) {
     if (!list || !list.length) {
       coursesEl.innerHTML = `<div class="empty">还没有课程。上面粘一个链接试试，第一次会先下载语音模型。</div>`;
       return;
     }
-    coursesEl.innerHTML = list
+    const books = [];
+    const byBook = {};
+    for (const c of list) {
+      const b = bookOf(c);
+      if (!byBook[b.bid]) {
+        byBook[b.bid] = { ...b, courses: [], sentences: 0, latest: c.created || '' };
+        books.push(byBook[b.bid]);
+      }
+      byBook[b.bid].courses.push(c);
+      byBook[b.bid].sentences += c.count || 0;
+      if ((c.created || '') > byBook[b.bid].latest) byBook[b.bid].latest = c.created;
+    }
+
+    coursesEl.innerHTML = books
       .map(
-        (c) => `
-      <div class="card course">
-        <div class="t">${esc(c.title || c.id)}</div>
-        <div class="m">
-          <span>${c.count} 句</span>
-          <span>· ${fmtTime(c.duration)}</span>
-          <span>· ${esc(c.created || '')}</span>
+        (b) => `
+      <div class="card book">
+        <div class="book-head">
+          <div>
+            <div class="t">${esc(b.btitle)}</div>
+            <div class="m"><span>${b.courses.length} 课</span><span>· ${b.sentences} 句</span><span>· ${esc(b.latest)}</span></div>
+          </div>
+          <div class="acts">
+            <button class="btn small" data-exp="${esc(b.bid)}">导出整本书</button>
+            <button class="btn small danger" data-delbook="${esc(b.bid)}">删除整本</button>
+          </div>
         </div>
-        <div class="acts">
-          <button class="btn small primary" data-open="${esc(c.id)}">打开</button>
-          <button class="btn small danger" data-del="${esc(c.id)}">删除</button>
+        <div class="units">
+          ${b.courses
+            .map(
+              (c) => `
+          <div class="unit">
+            <span class="unit-label">${esc(bookOf(c).label)}</span>
+            <span class="unit-meta">${c.count} 句</span>
+            <button class="btn small primary" data-open="${esc(c.id)}">打开</button>
+            <button class="btn small danger" data-del="${esc(c.id)}">删除</button>
+          </div>`
+            )
+            .join('')}
         </div>
       </div>`
       )
@@ -121,9 +217,36 @@ export function renderLibrary(root) {
         location.hash = `/play/${encodeURIComponent(b.dataset.open)}`;
       };
     });
+    coursesEl.querySelectorAll('[data-exp]').forEach((b) => {
+      b.onclick = async () => {
+        try {
+          toast('正在导出整本书…');
+          const path = await api.exportBook(b.dataset.exp);
+          if (path) toast(`已导出：${path}`);
+        } catch (e) {
+          toast(String(e && e.message ? e.message : e), true);
+        }
+      };
+    });
+    coursesEl.querySelectorAll('[data-delbook]').forEach((b) => {
+      b.onclick = async () => {
+        const book = books.find((x) => x.bid === b.dataset.delbook);
+        const n = book ? book.courses.length : 0;
+        if (!confirm(`删除「${book ? book.btitle : '这本书'}」的全部 ${n} 门课？音频和数据都会被删掉，不可恢复。`)) return;
+        try {
+          for (const c of book.courses) {
+            await api.del(c.id);
+          }
+          refresh();
+          toast('整本书已删除');
+        } catch (e) {
+          toast(String(e && e.message ? e.message : e), true);
+        }
+      };
+    });
     coursesEl.querySelectorAll('[data-del]').forEach((b) => {
       b.onclick = async () => {
-        if (!confirm('删除这门课程？音频和数据都会被删掉。')) return;
+        if (!confirm('删除这门课？音频和数据都会被删掉。')) return;
         try {
           await api.del(b.dataset.del);
           refresh();
@@ -203,8 +326,12 @@ export function renderLibrary(root) {
             $('#go').textContent = '生成课程';
             $('#url').value = '';
             refresh();
-            toast('课程已生成');
-            location.hash = `/play/${encodeURIComponent(j.courseId)}`;
+            if (j.courseId) {
+              toast('课程已生成');
+              location.hash = `/play/${encodeURIComponent(j.courseId)}`;
+            } else {
+              toast('批量生成完成，课程列表见下方');
+            }
           } else if (j.status === 'error') {
             stopJobPoll();
             busy = false;

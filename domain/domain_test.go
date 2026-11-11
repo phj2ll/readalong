@@ -54,7 +54,7 @@ func TestSegmentWordsKeepsText(t *testing.T) {
 
 func TestBuildSegmentsOnRealOutput(t *testing.T) {
 	f := loadSample(t)
-	segs := BuildSegments(rawSegmentsFrom(f))
+	segs := BuildSegments(rawSegmentsFrom(f), false)
 	if len(segs) == 0 {
 		t.Fatal("切句结果为空")
 	}
@@ -78,7 +78,7 @@ func TestBuildSegmentsOnRealOutput(t *testing.T) {
 }
 
 func TestAddSections(t *testing.T) {
-	segs := BuildSegments(rawSegmentsFrom(loadSample(t)))
+	segs := BuildSegments(rawSegmentsFrom(loadSample(t)), false)
 	out := AddSections(segs, 3.5)
 	if len(out) == 0 {
 		t.Fatal("分段失败")
@@ -129,12 +129,31 @@ func TestJoinWords(t *testing.T) {
 	}
 }
 
-func TestSplitByPunct(t *testing.T) {
+func TestSplitChunks(t *testing.T) {
 	ws := []Word{
 		{W: "Open"}, {W: "the"}, {W: "door"}, {W: "."},
 		{W: "This"}, {W: "is"}, {W: "my"}, {W: "classroom"}, {W: "."},
 	}
-	if chunks := splitByPunct(ws); len(chunks) != 2 {
-		t.Fatalf("应切成 2 句，实际 %d 句", len(chunks))
+	if chunks := splitChunks(ws, false); len(chunks) != 2 {
+		t.Fatalf("课文模式应切成 2 句，实际 %d 句", len(chunks))
+	}
+	// 单词模式：逗号就是边界，短停顿也切
+	words := []Word{
+		{W: "Hello,"}, {W: "nice,"}, {W: "meet,"}, {W: "you."},
+	}
+	if chunks := splitChunks(words, true); len(chunks) != 4 {
+		t.Fatalf("单词模式应切成 4 个词，实际 %d 句", len(chunks))
+	}
+	// 单词模式但停顿大（>0.75s）也切
+	words2 := []Word{
+		{W: "Let's", S: 0, E: 0.5}, {W: "us.", S: 1.4, E: 1.9},
+	}
+	if chunks := splitChunks(words2, true); len(chunks) != 2 {
+		t.Fatalf("单词模式长停顿应切，实际 %d 句", len(chunks))
+	}
+	// 课文模式逗号不切
+	words3 := []Word{{W: "apple,"}, {W: "banana."}}
+	if chunks := splitChunks(words3, false); len(chunks) != 1 {
+		t.Fatalf("课文模式逗号不应切，实际 %d 句", len(chunks))
 	}
 }

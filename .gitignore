@@ -1,7 +1,19 @@
 build/bin/
 frontend/dist/
+frontend/dist-mobile/
 frontend/node_modules/
 frontend/wailsjs/
+frontend/package.json.md5
 node_modules/
+mobile/node_modules/
+# cap sync 生成的 web 产物（CI 会重新生成，不入库）
+mobile/android/app/src/main/assets/public/
+mobile/android/app/src/main/assets/capacitor.config.json
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/android/build/
+mobile/android/local.properties
+mobile/android/capacitor-cordova-android-plugins/
 *.syso
+*.keystore
 .DS_Store

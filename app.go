@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -110,6 +112,105 @@ func (a *App) DeleteCourse(id string) error {
 	return store.Delete(id)
 }
 
+// DownloadVideos 为已有课程补下载教学视频课（本地 mp4，离线播放）。
+// 用于老课程（只有关联没有文件）或个别下载失败的视频。
+func (a *App) DownloadVideos(id string) (model.Job, error) {
+	if !store.ValidID(id) {
+		return model.Job{}, fmt.Errorf("课程 id 不合法")
+	}
+	course, err := store.Load(id)
+	if err != nil {
+		return model.Job{}, fmt.Errorf("课程不存在：%w", err)
+	}
+	need := 0
+	for _, v := range course.Videos {
+		if v.File == "" {
+			need++
+		}
+	}
+	if need == 0 {
+		return model.Job{}, fmt.Errorf("视频课都已下载到本地")
+	}
+	j := a.newJob()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				j.fail(fmt.Errorf("%v", r))
+			}
+		}()
+		j.set(func(d *model.Job) { d.Step = "解析分 P 列表"; d.Pct = 2 })
+		pages, err := domain.ListPages(course.Source)
+		if err != nil {
+			j.fail(fmt.Errorf("解析分 P 失败：%w", err))
+			return
+		}
+		total := need
+		span := 96 / total
+		if span < 1 {
+			span = 1
+		}
+		n := 0
+		for i := range course.Videos {
+			v := &course.Videos[i]
+			if v.File != "" || v.Page-1 >= len(pages) {
+				continue
+			}
+			cid := pages[v.Page-1].Cid
+			name := fmt.Sprintf("video-%d.mp4", v.Page)
+			j.set(func(d *model.Job) {
+				d.Step = fmt.Sprintf("下载视频课（%d/%d）：%s", n+1, total, v.Title)
+				d.Pct = 2 + (n+1)*span
+			})
+			dest := filepath.Join(config.CoursesDir, id, name)
+			if err := domain.SaveVideo(course.Source, cid, dest); err != nil {
+				j.log(fmt.Sprintf("P%d %s 下载失败：%v", v.Page, v.Title, err))
+				continue
+			}
+			v.File = name
+			n++
+			if err := store.SaveData(course); err != nil {
+				j.fail(fmt.Errorf("保存课程数据失败：%w", err))
+				return
+			}
+		}
+		if n == 0 {
+			j.fail(fmt.Errorf("全部视频下载失败（多为网络/风控原因），详情见日志；稍后可再点一次补下载"))
+			return
+		}
+		j.done(id, n)
+	}()
+	return j.snap(), nil
+}
+
+// ExportBook 把一本书（同一主链接的全部课程）打成一个课程包。
+// 返回保存路径（取消返回空串）。
+func (a *App) ExportBook(id string) (string, error) {
+	if !store.ValidID(id) {
+		return "", fmt.Errorf("课程 id 不合法")
+	}
+	bookID := store.BookIDOf(id)
+	a.mu.Lock()
+	ctx := a.ctx
+	a.mu.Unlock()
+	if ctx == nil {
+		return "", fmt.Errorf("窗口未就绪")
+	}
+	title := store.BookTitle(bookID)
+	path, err := runtime.SaveFileDialog(ctx, runtime.SaveDialogOptions{
+		Title:           "导出课程包（整本书）",
+		DefaultFilename: title + ".book.zip",
+		Filters:         []runtime.FileFilter{{DisplayName: "ReadAlong 课程包 (*.zip)", Pattern: "*.zip"}},
+	})
+	if err != nil || path == "" {
+		return "", err
+	}
+	if err := store.ZipBook(bookID, path); err != nil {
+		return "", err
+	}
+	logf("导出课程包：%s（%s）", path, title)
+	return path, nil
+}
+
 // CreateCourse 提交生成任务，立即返回任务快照，前端再轮询 Job。
 func (a *App) CreateCourse(rawURL, lang string) (model.Job, error) {
 	rawURL = strings.TrimSpace(rawURL)
@@ -135,11 +236,30 @@ func (a *App) CreateCourse(rawURL, lang string) (model.Job, error) {
 			}
 		}()
 
+		// 没带 p= 参数的链接先探测是不是多 P；是就走批量，逐个 P 生成独立课程
+		if !strings.Contains(rawURL, "p=") {
+			j.set(func(d *model.Job) { d.Step = "解析分 P 列表"; d.Pct = 1 })
+			pages, lerr := domain.ListPages(rawURL)
+			if lerr != nil {
+				j.log("分 P 探测失败，按单 P 生成：" + lerr.Error())
+			} else if len(pages) > 1 {
+				a.runBatch(j, rawURL, lang, pages)
+				return
+			}
+		}
+
 		res, err := domain.Run(rawURL, cid, lang, jobProgress{j: j})
 		if err != nil {
 			j.fail(err)
 			return
 		}
+		res.Course.BookID = store.BaseBV(rawURL)
+		if t := domain.SeriesOf(res.Course.Title); t != "" {
+			res.Course.BookTitle = t
+		} else {
+			res.Course.BookTitle = res.Course.Title
+		}
+		defer os.Remove(res.WavPath) // 暂存的 wav，落盘（或失败）后都不再需要
 		if err := store.Save(res.Course, res.WavPath); err != nil {
 			j.fail(fmt.Errorf("保存课程失败：%w", err))
 			return
@@ -149,6 +269,119 @@ func (a *App) CreateCourse(rawURL, lang string) (model.Job, error) {
 
 	return j.snap(), nil
 }
+
+// runBatch 把多 P 视频生成课程：标题带 Unit 的合并成一门课，其余每个 P 一门。
+// 已存在的跳过，单个失败不影响后续。
+func (a *App) runBatch(j *jobState, rawURL, lang string, pages []domain.PageInfo) {
+	total := len(pages)
+	span := 100 / total
+	if span < 1 {
+		span = 1
+	}
+	groups := domain.GroupPages(pages)
+	// 视频课分 P（Let's start / explore 等教学动画）不适合跟读，跳过并在日志说明
+	included := map[int]bool{}
+	for _, g := range groups {
+		for _, gp := range g.Pages {
+			included[gp.Page] = true
+		}
+	}
+	skipped := 0
+	for i, pg := range pages {
+		if !included[i+1] {
+			skipped++
+			j.log(fmt.Sprintf("跳过视频课 P%d %s（教学内容，不切句跟读）", i+1, pg.Title))
+		}
+	}
+	if skipped > 0 {
+		j.log(fmt.Sprintf("共 %d 个视频课分 P 不参与跟读生成", skipped))
+	}
+	ok, skip, fail := 0, 0, 0
+
+	for _, g := range groups {
+		cid := store.CourseIDForGroup(rawURL, g.Suffix)
+		if store.CourseExists(cid) {
+			skip += len(g.Pages)
+			j.log(fmt.Sprintf("%s 已存在，跳过（要重新生成请先在课程库「删除整本」，或单独删掉这门课）", g.Label))
+			continue
+		}
+
+		j.set(func(d *model.Job) {
+			d.Step = fmt.Sprintf("%s 生成中（%d 个分 P）", g.Label, len(g.Pages))
+		})
+		op := offsetProgress{
+			up:     jobProgress{j: j},
+			prefix: g.Label,
+			base:   (g.Pages[0].Page - 1) * span,
+			span:   len(g.Pages) * span,
+		}
+		res, err := domain.RunGrouped(rawURL, cid, lang, g.Label, g.Pages, op)
+		if err == nil {
+			res.Course.BookID = store.BaseBV(rawURL)
+			res.Course.BookTitle = domain.SeriesOf(domain.CleanTitle(pages[0].Title))
+			// 教学视频课：下载成 mp4 放进课程目录（失败不影响课程，回退在线播放）
+			for _, v := range g.Videos {
+				ref := model.VideoRef{Title: v.Title, Page: v.Page}
+				if v.Page-1 < len(pages) {
+					c := pages[v.Page-1].Cid
+					name := fmt.Sprintf("video-%d.mp4", v.Page)
+					dest := filepath.Join(config.CoursesDir, cid, name)
+					j.log(fmt.Sprintf("%s 下载视频课：%s", g.Label, v.Title))
+					if err := domain.SaveVideo(rawURL, c, dest); err != nil {
+						j.log(fmt.Sprintf("视频课下载失败（改为在线播放）：%v", err))
+					} else {
+						ref.File = name
+					}
+				}
+				res.Course.Videos = append(res.Course.Videos, ref)
+			}
+		}
+		if err != nil {
+			fail += len(g.Pages)
+			j.log(fmt.Sprintf("%s 失败：%v", g.Label, err))
+			continue
+		}
+		if err := store.Save(res.Course, res.WavPath); err != nil {
+			os.Remove(res.WavPath)
+			fail += len(g.Pages)
+			j.log(fmt.Sprintf("%s 保存失败：%v", g.Label, err))
+			continue
+		}
+		os.Remove(res.WavPath)
+		ok++
+		j.log(fmt.Sprintf("%s 完成（%d 句，%d 个分 P）", g.Label, len(res.Course.Segments), len(g.Pages)))
+	}
+
+	if ok == 0 && skip == 0 {
+		j.fail(fmt.Errorf("全部生成失败（共 %d 个分 P）", total))
+		return
+	}
+	j.log(fmt.Sprintf("批量完成：课程 %d 门，跳过 %d 个分 P，失败 %d 个分 P", ok, skip, fail))
+	j.set(func(d *model.Job) {
+		d.Status = "done"
+		d.Step = "完成"
+		d.Pct = 100
+		d.CourseID = "" // 批量不自动跳转，留在课程库看列表
+	})
+}
+
+// offsetProgress 把一组分 P 的进度映射到整体进度条。
+type offsetProgress struct {
+	up     domain.Progress
+	prefix string
+	base   int
+	span   int
+}
+
+func (p offsetProgress) Step(step string, pct int) {
+	v := p.base + pct*p.span/100
+	if v > 99 {
+		v = 99
+	}
+	p.up.Step(p.prefix+" "+step, v)
+}
+
+func (p offsetProgress) Log(line string) { p.up.Log(p.prefix + " " + line) }
 
 // Job 查询任务进度。
 func (a *App) Job(id string) (model.Job, error) {
@@ -187,6 +420,50 @@ func (a *App) OpenURL(u string) {
 		return
 	}
 	runtime.BrowserOpenURL(ctx, u)
+}
+
+// ---------------- 语音评测（讯飞 ISE） ----------------
+
+// GetSettings 返回评测凭据。
+func (a *App) GetSettings() model.Settings { return store.LoadSettings() }
+
+// SaveSettings 保存评测凭据，三项必须齐全。
+func (a *App) SaveSettings(s model.Settings) error {
+	s.AppID = strings.TrimSpace(s.AppID)
+	s.APIKey = strings.TrimSpace(s.APIKey)
+	s.APISecret = strings.TrimSpace(s.APISecret)
+	if !store.SettingsReady(s) {
+		return fmt.Errorf("APPID、APIKey、APISecret 都要填")
+	}
+	return store.SaveSettings(s)
+}
+
+// AssessRecording 把一段录音（webm 等，base64 编码）送讯飞评分。
+// Wails 传参走 JSON，Uint8Array 会变成对象，所以前端编码成 base64 字符串。
+func (a *App) AssessRecording(text, lang string, audioB64 string) (model.AssessResult, error) {
+	audio, err := base64.StdEncoding.DecodeString(audioB64)
+	if err != nil || len(audio) == 0 {
+		return model.AssessResult{}, fmt.Errorf("录音数据无效")
+	}
+	st := store.LoadSettings()
+	if !store.SettingsReady(st) {
+		return model.AssessResult{}, fmt.Errorf("先到课程库右上角「评测设置」里填讯飞凭据")
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return model.AssessResult{}, fmt.Errorf("参考文本为空")
+	}
+	pcm, err := domain.ConvertToPCM(audio)
+	if err != nil {
+		return model.AssessResult{}, err
+	}
+	res, err := domain.Assess(pcm, text, lang, st)
+	if err != nil {
+		logf("评测失败：%v", err)
+		return model.AssessResult{}, err
+	}
+	logf("评测完成：总分 %.1f 准确 %.1f 流利 %.1f", res.Total, res.Accuracy, res.Fluency)
+	return res, nil
 }
 
 // ---------------- 任务实现 ----------------

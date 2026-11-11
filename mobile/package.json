@@ -1,0 +1,16 @@
+{
+  "name": "readalong-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ReadAlong 手机端（Capacitor Android 壳，复用 Reader 前端）",
+  "scripts": {
+    "web": "cd ../frontend && npm run build:mobile",
+    "sync": "npm run web && npx cap sync android",
+    "apk": "npm run sync && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.6.10",
+    "@capacitor/cli": "^7.6.10",
+    "@capacitor/core": "^7.6.10"
+  }
+}

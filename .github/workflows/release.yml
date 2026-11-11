@@ -9,7 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  # ReadAlong Studio：桌面版（课程生成 + 练习），产物 exe
+  studio:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -41,5 +42,29 @@ jobs:
       - name: Create Release
         env:
           GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" build/bin/readalong.exe --generate-notes
+
+  # ReadAlong Reader：纯前端阅读端，产物 zip（本地打开 / 静态托管均可）
+  reader:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build frontend
+        run: cd frontend && npm ci && npm run build
+
+      - name: Pack reader
         run: |
-          gh release create "$GITHUB_REF_NAME" build/bin/readalong.exe --generate-notes
+          cd frontend/dist
+          zip -r "../../readalong-reader.zip" reader.html assets
+
+      - name: Upload to Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" readalong-reader.zip --clobber

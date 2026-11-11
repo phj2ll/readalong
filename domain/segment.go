@@ -91,16 +91,30 @@ func JoinWords(ws []Word) string {
 	return b.String()
 }
 
-// splitByPunct 在句末标点处断句。
-func splitByPunct(words []Word) [][]Word {
+// wordBreakRe 单词表模式下的断点标点：逗号/分号/顿号就是词边界。
+var wordBreakRe = regexp.MustCompile(`[,;，；、]+$`)
+
+// splitChunks 按断点规则把词序列切块。
+// wordMode=false（课文）：只在句末标点或 >0.75s 停顿处切（逗号是句子内部，不能切）。
+// wordMode=true（单词表）：逗号/顿号也切，停顿阈值降到 0.4s——单词表里
+// 老师念词节奏快，词间停顿常常不到 0.75s，只靠停顿会把几个词粘成一条。
+func splitChunks(words []Word, wordMode bool) [][]Word {
 	var chunks [][]Word
 	var cur []Word
 	for _, w := range words {
-		cur = append(cur, w)
-		if endPunctRe.MatchString(strings.TrimSpace(w.W)) {
-			chunks = append(chunks, cur)
-			cur = nil
+		if len(cur) > 0 {
+			prev := cur[len(cur)-1]
+			gap := w.S - prev.E
+			brk := endPunctRe.MatchString(strings.TrimSpace(prev.W)) || gap > 0.75
+			if wordMode && !brk {
+				brk = wordBreakRe.MatchString(strings.TrimSpace(prev.W)) || gap > 0.4
+			}
+			if brk {
+				chunks = append(chunks, cur)
+				cur = nil
+			}
 		}
+		cur = append(cur, w)
 	}
 	if len(cur) > 0 {
 		chunks = append(chunks, cur)
@@ -109,12 +123,17 @@ func splitByPunct(words []Word) [][]Word {
 }
 
 // BuildSegments 把识别片段切成单句，过滤过短或无意义的碎片。
-func BuildSegments(raw []RawSegment) []model.Segment {
+// wordMode=true 时按单词表规则切（逗号即边界、停顿阈值 0.4s、最短时长放宽）。
+func BuildSegments(raw []RawSegment, wordMode bool) []model.Segment {
+	minDur := 0.45
+	if wordMode {
+		minDur = 0.3 // 单个短单词也要保留
+	}
 	var out []model.Segment
 	for _, rs := range raw {
 		var groups [][]Word
 		if len(rs.Words) > 0 {
-			groups = splitByPunct(rs.Words)
+			groups = splitChunks(rs.Words, wordMode)
 		} else {
 			groups = [][]Word{{{W: rs.Text, S: rs.Start, E: rs.End}}}
 		}
@@ -122,10 +141,10 @@ func BuildSegments(raw []RawSegment) []model.Segment {
 			if len(g) == 0 {
 				continue
 			}
-			text := CleanText(JoinWords(g))
+			text := CleanText(strings.TrimRight(JoinWords(g), ",，;；、:："))
 			start := Round2(g[0].S)
 			end := Round2(g[len(g)-1].E)
-			if text == "" || end-start < 0.45 {
+			if text == "" || end-start < minDur {
 				continue
 			}
 			if !hasLetterRe.MatchString(text) {

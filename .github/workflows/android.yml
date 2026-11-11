@@ -1,0 +1,93 @@
+name: Android APK
+
+# 触发方式：
+#   1. push 到 main（只要动了前端/手机端代码）→ 自动构建 APK，作为 workflow artifact 可下载
+#   2. push v* tag → 额外把 APK 挂到 GitHub Release
+#   3. 手动触发（Actions 页面 Run workflow）
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'frontend/**'
+      - 'mobile/**'
+      - '.github/workflows/android.yml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - 'mobile/**'
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # tag 时上传 Release 资产需要
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      # 预装 compileSdk 35 需要的组件，避免 Gradle 首次构建时自动下载失败
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # 手机端前端产物：Reader 模式（纯前端 + JS 直连讯飞评分）
+      - name: Build web assets
+        run: |
+          cd frontend
+          npm ci
+          npm run build:mobile
+
+      # 同步 web 产物进 Android 工程
+      - name: Capacitor sync
+        run: |
+          cd mobile
+          npm ci
+          npx cap sync android
+
+      # 出包：debug 包可直接安装（未签名发布配置也能装）
+      # versionCode 用 run_number 自增，versionName 带提交短 SHA，方便区分每次构建
+      - name: Build APK
+        run: |
+          cd mobile/android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon \
+            -PversionCode=${{ github.run_number }} \
+            -PversionName="0.1.${{ github.run_number }}"
+
+      - name: Rename APK
+        run: |
+          mkdir -p out
+          cp mobile/android/app/build/outputs/apk/debug/app-debug.apk \
+             "out/ReadAlong-${{ github.sha }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: readalong-apk
+          path: out/*.apk
+          retention-days: 30
+
+      # 打 tag 时顺手发 Release，手机上直接点链接安装
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: out/*.apk
+          generate_release_notes: true
