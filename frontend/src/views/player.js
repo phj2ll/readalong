@@ -460,33 +460,71 @@ export function renderPlayer(root, courseId) {
     return tasks;
   }
 
-  // 视频课：只放本地 mp4（离线可看）。没下载到不降级——B 站嵌入播放器在应用内
-  // 会触发登录墙（无 cookie 风控），播不了；只给系统浏览器兜底（有登录态）。
-  async function openVideoModal(v) {
-    let el = document.getElementById('videoModal');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'videoModal';
-      el.innerHTML = `
-        <div class="modal-mask"></div>
-        <div class="modal video-modal">
-          <div class="video-head">
-            <span id="videoTitle"></span>
-            <div class="acts">
-              <a class="btn small" id="videoWeb" target="_blank" rel="noopener">用浏览器打开</a>
-              <button class="btn small" id="videoClose">关闭</button>
-            </div>
-          </div>
-          <div id="videoBody"></div>
-        </div>`;
-      document.body.appendChild(el);
+  // ---------- 视频课：全屏播放层 ----------
+  // 只放本地 mp4（离线可看）。没下载到不降级——B 站嵌入播放器在应用内会触发
+  // 登录墙（无 cookie 风控），播不了；只给系统浏览器兜底（有登录态）。
+  let videoEl = null; // 全屏层（挂在 body 上，跨 renderTasks 复用）
+  let videoUrl = ''; // 当前 blob URL，关闭时必须 revoke
+  let videoSeq = 0; // 加载序号：关闭后异步返回的结果要丢弃
+  let videoPushed = false; // 是否为本层压了一条历史（Android 返回键关闭用）
+
+  function ensureVideoEl() {
+    if (videoEl) return videoEl;
+    videoEl = document.createElement('div');
+    videoEl.id = 'videoModal';
+    videoEl.innerHTML = `
+      <div class="video-bar">
+        <button class="video-back" data-videoclose>‹ 返回</button>
+        <span class="video-title" id="videoTitle"></span>
+        <a class="video-web" id="videoWeb" target="_blank" rel="noopener">浏览器</a>
+      </div>
+      <div class="video-stage" id="videoBody"></div>`;
+    document.body.appendChild(videoEl);
+    videoEl.querySelector('[data-videoclose]').onclick = () => closeVideo(true);
+    return videoEl;
+  }
+
+  // goBack=true 表示由「返回」按钮主动关闭：需要把压入的历史条目弹掉
+  function closeVideo(goBack) {
+    videoSeq++;
+    const v = videoEl && videoEl.querySelector('video');
+    if (v) {
+      try {
+        v.pause();
+      } catch (e) {
+        /* 忽略 */
+      }
+      v.removeAttribute('src');
     }
-    const close = () => {
-      el.style.display = 'none';
-      el.querySelector('#videoBody').innerHTML = '';
-    };
-    el.querySelector('.modal-mask').onclick = close;
-    el.querySelector('#videoClose').onclick = close;
+    if (videoUrl) {
+      URL.revokeObjectURL(videoUrl);
+      videoUrl = '';
+    }
+    if (!videoEl) return;
+    videoEl.querySelector('#videoBody').innerHTML = '';
+    videoEl.style.display = 'none';
+    document.body.classList.remove('video-open');
+    const pushed = videoPushed;
+    videoPushed = false;
+    if (goBack && pushed) {
+      try {
+        history.back();
+      } catch (e) {
+        /* 忽略 */
+      }
+    }
+  }
+
+  // Android 硬件返回键 / 浏览器后退：只关掉视频层，不退出课程
+  function onVideoPop() {
+    if (!videoPushed) return;
+    closeVideo(false);
+  }
+  window.addEventListener('popstate', onVideoPop);
+
+  async function openVideoModal(v) {
+    const el = ensureVideoEl();
+    const body = el.querySelector('#videoBody');
 
     const m = (state.data.source || '').match(/BV([0-9A-Za-z]{10})/);
     el.querySelector('#videoWeb').href = m
@@ -494,10 +532,30 @@ export function renderPlayer(root, courseId) {
       : 'https://www.bilibili.com';
     el.querySelector('#videoTitle').textContent = v.title;
 
+    // 先把全屏层亮出来并给个「加载中」，不要等文件取完才出现（原来的体验是毫无反馈）
+    if (videoUrl) {
+      URL.revokeObjectURL(videoUrl);
+      videoUrl = '';
+    }
+    body.innerHTML = '<div class="video-loading">视频加载中…</div>';
+    el.style.display = 'flex';
+    document.body.classList.add('video-open');
+    if (!videoPushed) {
+      try {
+        history.pushState({ videoLayer: 1 }, '');
+        videoPushed = true;
+      } catch (e) {
+        /* 个别环境不支持，忽略 */
+      }
+    }
+    const seq = ++videoSeq;
+    const stale = () => seq !== videoSeq;
+
     // 内存数据可能是旧的（比如刚在别的入口补下载完）：先和后端对一次账
     if (!v.file) {
       try {
         const fresh = await api.course(courseId);
+        if (stale()) return;
         const fv = (fresh.videos || []).find((x) => x.page === v.page);
         if (fv && fv.file) {
           state.data = fresh;
@@ -509,19 +567,32 @@ export function renderPlayer(root, courseId) {
       }
     }
 
-    const body = el.querySelector('#videoBody');
-    if (v.file) {
-      const src = await api.videoSrc(courseId, v.file);
-      body.innerHTML = `<video controls autoplay playsinline src="${esc(src)}"></video>`;
-      body.querySelector('video').addEventListener('error', () => {
-        body.innerHTML =
-          '<div class="video-fail">本地视频加载失败，点上方「用浏览器打开」观看</div>';
-      });
-    } else {
+    if (!v.file) {
       body.innerHTML =
-        '<div class="video-fail">这个视频课没有下载到本地<br>回任务列表点「补下载视频」，或点上方「用浏览器打开」观看</div>';
+        '<div class="video-fail">这个视频课还没下载到本地<br>回任务列表点「补下载视频」，或点右上角「浏览器」观看</div>';
+      return;
     }
-    el.style.display = 'block';
+    try {
+      videoUrl = await api.videoSrc(courseId, v.file);
+    } catch (e) {
+      if (!stale()) {
+        body.innerHTML = '<div class="video-fail">视频读取失败：' + esc(String(e.message || e)) + '</div>';
+      }
+      return;
+    }
+    if (stale()) {
+      URL.revokeObjectURL(videoUrl);
+      videoUrl = '';
+      return;
+    }
+    body.innerHTML = `<video controls autoplay playsinline webkit-playsinline src="${esc(videoUrl)}"></video>`;
+    const vd = body.querySelector('video');
+    vd.addEventListener('error', () => {
+      body.innerHTML = '<div class="video-fail">本地视频加载失败，点右上角「浏览器」观看</div>';
+    });
+    // 自动播放被策略拦住时不影响播放器使用，点一下即可
+    const p = vd.play();
+    if (p && p.catch) p.catch(() => {});
   }
 
   // 补下载视频课（老课程没有本地文件时）
@@ -1056,6 +1127,11 @@ export function renderPlayer(root, courseId) {
   function onKey(e) {
     const tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || e.target.isContentEditable) return;
+    // 视频层打开时只处理返回键，别让空格/方向键去操作背后的课文音频
+    if (document.body.classList.contains('video-open')) {
+      if (e.key === 'Escape') closeVideo(true);
+      return;
+    }
     if (e.code === 'Space') {
       e.preventDefault();
       if (state.current >= 0) playSegment(state.current, false);
@@ -1115,6 +1191,12 @@ export function renderPlayer(root, courseId) {
   return () => {
     document.body.classList.remove('focus-mode');
     window.removeEventListener('keydown', onKey);
+    window.removeEventListener('popstate', onVideoPop);
+    closeVideo(false);
+    if (videoEl) {
+      videoEl.remove();
+      videoEl = null;
+    }
     clearTimeout(state.autoNextTimer);
     if (state.ringTimer) clearInterval(state.ringTimer);
     if (state.waveTimer) clearInterval(state.waveTimer);
