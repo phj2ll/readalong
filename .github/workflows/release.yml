@@ -39,10 +39,15 @@ jobs:
       - name: Wails build
         run: wails build -clean -platform windows/amd64 -ldflags "-X main.version=${GITHUB_REF_NAME#v}"
 
+      # 同一个 tag 下 Android APK 工作流可能已经先建好 Release，
+      # 这里先判断再建，然后统一用 upload 追加资产（--clobber 覆盖同名文件）
       - name: Create Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" build/bin/readalong.exe --generate-notes
+        run: |
+          gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" build/bin/readalong.exe --clobber
 
   # ReadAlong Reader：纯前端阅读端，产物 zip（本地打开 / 静态托管均可）
   reader:
