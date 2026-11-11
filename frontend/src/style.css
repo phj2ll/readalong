@@ -537,15 +537,59 @@ select:focus {
 .book-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--line);
 }
 
+/* 书籍封面：2:3 的竖版缩略图，没设封面时显示占位图标 */
+.book-cover {
+  flex: none;
+  width: 52px;
+  height: 74px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #eef0f4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  border: 1px solid var(--line);
+}
+
+.book-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.book-head .info {
+  flex: 1;
+  min-width: 0;
+}
+
+.book-head .acts {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .book-head .t {
   font-size: 15px;
   font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.book-head .t .edit {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  margin-left: 6px;
 }
 
 .book-head .m {
@@ -811,20 +855,20 @@ body.video-open {
 }
 
 /* ---------- 弹窗 ---------- */
-#iseModal {
+#iseModal, #bookModal {
   display: none;
   position: fixed;
   inset: 0;
   z-index: 90;
 }
 
-#iseModal .modal-mask {
+#iseModal, #bookModal .modal-mask {
   position: absolute;
   inset: 0;
   background: rgba(31, 31, 29, 0.35);
 }
 
-#iseModal .modal {
+#iseModal, #bookModal .modal {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -837,27 +881,27 @@ body.video-open {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.14);
 }
 
-#iseModal .modal h2 {
+#iseModal, #bookModal .modal h2 {
   font-size: 15.5px;
   font-weight: 650;
   margin: 0 0 6px;
 }
 
-#iseModal .modal .hint {
+#iseModal, #bookModal .modal .hint {
   font-size: 12px;
   color: var(--muted);
   margin: 0 0 14px;
   line-height: 1.6;
 }
 
-#iseModal .modal label {
+#iseModal, #bookModal .modal label {
   display: block;
   font-size: 12.5px;
   color: var(--muted);
   margin-bottom: 10px;
 }
 
-#iseModal .modal input {
+#iseModal, #bookModal .modal input {
   display: block;
   width: 100%;
   margin-top: 4px;
@@ -872,13 +916,13 @@ body.video-open {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-#iseModal .modal input:focus {
+#iseModal, #bookModal .modal input:focus {
   border-color: var(--accent);
   background: #fff;
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-#iseModal .modal-acts {
+#iseModal, #bookModal .modal-acts {
   display: flex;
   justify-content: flex-end;
   gap: 8px;

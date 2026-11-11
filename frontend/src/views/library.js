@@ -163,6 +163,62 @@ export function renderLibrary(root) {
     return { bid, btitle: btitle || bid, label };
   }
 
+  // 用户自定义过的书籍信息（书名 / 封面），bid → { id, title, cover, mtime }
+  let bookMeta = {};
+
+  function bookTitleOf(b) {
+    const m = bookMeta[b.bid];
+    return (m && m.title) || b.btitle;
+  }
+
+  function coverUrlOf(bid) {
+    const m = bookMeta[bid];
+    if (!m || !m.cover) return '';
+    // mtime 做版本号，换封面后立刻刷新缓存
+    return `/books/${encodeURIComponent(m.cover)}?v=${m.mtime || 0}`;
+  }
+
+  // 改书名的小弹窗（Wails 的 WebView 里 window.prompt 不可靠，自己画一个）
+  function askBookTitle(cur) {
+    return new Promise((resolve) => {
+      let el = document.getElementById('bookModal');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'bookModal';
+        el.innerHTML = `
+          <div class="modal-mask"></div>
+          <div class="modal">
+            <h2>修改书名</h2>
+            <p class="hint">书名显示在课程库和手机端书架，导出课程包时也会带上。</p>
+            <label>书名<input type="text" id="bookTitleInput" maxlength="60" spellcheck="false" autocomplete="off" /></label>
+            <div class="modal-acts">
+              <button class="btn" id="bookCancel">取消</button>
+              <button class="btn primary" id="bookSave">保存</button>
+            </div>
+          </div>`;
+        document.body.appendChild(el);
+      }
+      const input = el.querySelector('#bookTitleInput');
+      input.value = cur || '';
+      const done = (v) => {
+        el.style.display = 'none';
+        resolve(v);
+      };
+      el.querySelector('.modal-mask').onclick = () => done(null);
+      el.querySelector('#bookCancel').onclick = () => done(null);
+      el.querySelector('#bookSave').onclick = () => done(input.value.trim());
+      input.onkeydown = (e) => {
+        if (e.key === 'Enter') done(input.value.trim());
+        if (e.key === 'Escape') done(null);
+      };
+      el.style.display = 'block';
+      setTimeout(() => {
+        input.focus();
+        input.select();
+      }, 30);
+    });
+  }
+
   function renderCourses(list) {
     if (!list || !list.length) {
       coursesEl.innerHTML = `<div class="empty">还没有课程。上面粘一个链接试试，第一次会先下载语音模型。</div>`;
@@ -182,16 +238,21 @@ export function renderLibrary(root) {
     }
 
     coursesEl.innerHTML = books
-      .map(
-        (b) => `
+      .map((b) => {
+        const cov = coverUrlOf(b.bid);
+        return `
       <div class="card book">
         <div class="book-head">
-          <div>
-            <div class="t">${esc(b.btitle)}</div>
+          <div class="book-cover">${cov ? `<img src="${esc(cov)}" alt="" />` : '📘'}</div>
+          <div class="info">
+            <div class="t">${esc(bookTitleOf(b))}</div>
             <div class="m"><span>${b.courses.length} 课</span><span>· ${b.sentences} 句</span><span>· ${esc(b.latest)}</span></div>
           </div>
           <div class="acts">
-            <button class="btn small" data-exp="${esc(b.bid)}">导出整本书</button>
+            <button class="btn small" data-rename="${esc(b.bid)}">改书名</button>
+            <button class="btn small" data-cover="${esc(b.bid)}">换封面</button>
+            <button class="btn small" data-exp="${esc(b.bid)}" title="整本书（课程 + 音频 + 视频）导出，首次导入手机时用">导出整本书</button>
+            <button class="btn small" data-expi="${esc(b.bid)}" title="只含书名和封面，几百 KB；改完书名/封面后用它同步到手机">导出书信息</button>
             <button class="btn small danger" data-delbook="${esc(b.bid)}">删除整本</button>
           </div>
         </div>
@@ -208,13 +269,42 @@ export function renderLibrary(root) {
             )
             .join('')}
         </div>
-      </div>`
-      )
+      </div>`;
+      })
       .join('');
 
     coursesEl.querySelectorAll('[data-open]').forEach((b) => {
       b.onclick = () => {
         location.hash = `/play/${encodeURIComponent(b.dataset.open)}`;
+      };
+    });
+    coursesEl.querySelectorAll('[data-rename]').forEach((b) => {
+      b.onclick = async () => {
+        const bid = b.dataset.rename;
+        const book = books.find((x) => x.bid === bid);
+        const cur = book ? bookTitleOf(book) : '';
+        const title = await askBookTitle(cur);
+        if (title == null || !title || title === cur) return;
+        try {
+          await api.renameBook(bid, title);
+          refresh();
+          toast('书名已更新');
+        } catch (e) {
+          toast(String(e && e.message ? e.message : e), true);
+        }
+      };
+    });
+    coursesEl.querySelectorAll('[data-cover]').forEach((b) => {
+      b.onclick = async () => {
+        try {
+          const info = await api.pickCover(b.dataset.cover);
+          if (info && info.cover) {
+            refresh();
+            toast('封面已更新');
+          }
+        } catch (e) {
+          toast(String(e && e.message ? e.message : e), true);
+        }
       };
     });
     coursesEl.querySelectorAll('[data-exp]').forEach((b) => {
@@ -228,11 +318,22 @@ export function renderLibrary(root) {
         }
       };
     });
+    coursesEl.querySelectorAll('[data-expi]').forEach((b) => {
+      b.onclick = async () => {
+        try {
+          const path = await api.exportBookInfo(b.dataset.expi);
+          if (path) toast(`已导出书信息：${path}（手机导入即可更新书名/封面）`);
+        } catch (e) {
+          toast(String(e && e.message ? e.message : e), true);
+        }
+      };
+    });
     coursesEl.querySelectorAll('[data-delbook]').forEach((b) => {
       b.onclick = async () => {
         const book = books.find((x) => x.bid === b.dataset.delbook);
         const n = book ? book.courses.length : 0;
-        if (!confirm(`删除「${book ? book.btitle : '这本书'}」的全部 ${n} 门课？音频和数据都会被删掉，不可恢复。`)) return;
+        const name = book ? bookTitleOf(book) : '这本书';
+        if (!confirm(`删除「${name}」的全部 ${n} 门课？音频和数据都会被删掉，不可恢复。`)) return;
         try {
           for (const c of book.courses) {
             await api.del(c.id);
@@ -259,9 +360,14 @@ export function renderLibrary(root) {
   }
 
   function refresh() {
-    api
-      .list()
-      .then(renderCourses)
+    Promise.all([api.list().catch(() => []), api.books().catch(() => [])])
+      .then(([list, metas]) => {
+        bookMeta = {};
+        for (const m of metas || []) {
+          if (m && m.id) bookMeta[m.id] = m;
+        }
+        renderCourses(list || []);
+      })
       .catch(() => renderCourses([]));
   }
   refresh();

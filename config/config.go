@@ -12,6 +12,7 @@ import (
 var (
 	Root       string // 数据根目录
 	CoursesDir string
+	BooksDir   string
 	ModelsDir  string
 	TmpDir     string
 	LogsDir    string
@@ -43,12 +44,14 @@ func Init() {
 	}
 
 	CoursesDir = filepath.Join(Root, "courses")
+	// BooksDir 存每本书的元数据（书名、封面图），一本书一个 <书ID>.json
+	BooksDir = filepath.Join(Root, "books")
 	ModelsDir = filepath.Join(Root, "models")
 	TmpDir = filepath.Join(Root, ".tmp")
 	LogsDir = filepath.Join(Root, "logs")
 	BinDir = filepath.Join(Root, "bin")
 
-	for _, d := range []string{CoursesDir, ModelsDir, TmpDir, LogsDir, BinDir} {
+	for _, d := range []string{CoursesDir, BooksDir, ModelsDir, TmpDir, LogsDir, BinDir} {
 		_ = os.MkdirAll(d, 0o755)
 	}
 }

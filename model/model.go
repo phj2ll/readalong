@@ -80,6 +80,15 @@ type ToolState struct {
 	Message string `json:"message"`
 }
 
+// BookInfo 是一本书的自定义信息（书名、封面），落盘为 books/<书ID>.json。
+// 没有这个文件的书籍走「从课程 meta 推导书名」的老逻辑。
+type BookInfo struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Cover string `json:"cover"` // 封面文件名（books 目录内），空表示没有封面
+	Mtime int64  `json:"mtime"` // 封面文件修改时间，前端拿来做 ?v= 破缓存
+}
+
 // Settings 是讯飞语音评测的凭据，落盘为 settings.json。
 type Settings struct {
 	AppID     string `json:"appId"`

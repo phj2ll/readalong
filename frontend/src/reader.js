@@ -38,7 +38,22 @@ function route() {
 }
 window.addEventListener('hashchange', route);
 
-// ---------- 导入课程包（整本书或单个课程，向下兼容） ----------
+// ---------- 导入课程包（整本书 / 单个课程 / 只含书名封面的小包） ----------
+
+// 封面在包里的文件名：优先 book.json 声明的，其次按 cover.<ext> 找
+function pickCoverFile(names, manifest) {
+  if (manifest.cover && names.includes(manifest.cover)) return manifest.cover;
+  return names.find((x) => /^cover\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(x)) || '';
+}
+
+function imageTypeOf(name) {
+  if (/\.png$/i.test(name)) return 'image/png';
+  if (/\.webp$/i.test(name)) return 'image/webp';
+  if (/\.gif$/i.test(name)) return 'image/gif';
+  if (/\.bmp$/i.test(name)) return 'image/bmp';
+  return 'image/jpeg';
+}
+
 async function importPackage(file) {
   if (!/\.zip$/i.test(file.name)) {
     toast('请选择 .zip 课程包（桌面 Studio 的「导出整本书」生成）', true);
@@ -104,6 +119,35 @@ async function importPackage(file) {
       toast('book.json 解析失败', true);
       return;
     }
+    // 小包（infoOnly）：只带书名和封面，改完信息后用它同步，不动课程
+    if (manifest.infoOnly) {
+      const mine = (await allCourses()).filter((c) => bookOf(c).bid === manifest.id);
+      if (!mine.length) {
+        toast('这本书还没导入课程，请先导入完整课程包', true);
+        return;
+      }
+      try {
+        const coverFile = pickCoverFile(names, manifest);
+        const prev = await idb.getBook(manifest.id);
+        await idb.putBook({
+          id: manifest.id,
+          title: manifest.title || (prev && prev.title) || '',
+          coverBlob: coverFile
+            ? new Blob([files[coverFile]], { type: imageTypeOf(coverFile) })
+            : prev
+              ? prev.coverBlob
+              : null,
+        });
+      } catch (e) {
+        toast('书名/封面写入失败：' + (e.message || e), true);
+        return;
+      }
+      toast(`已更新「${manifest.title}」的书名和封面`);
+      location.hash = '#/';
+      route();
+      return;
+    }
+
     let n = 0;
     for (const c of manifest.courses || []) {
       const d = `${c.id}/data.json`;
@@ -120,6 +164,18 @@ async function importPackage(file) {
     if (!n) {
       toast('课程包里没有可导入的课程', true);
       return;
+    }
+    // 书名/封面：新版课程包会带 cover.jpg + book.json 里的 title
+    try {
+      const coverFile = pickCoverFile(names, manifest);
+      const prev = await idb.getBook(manifest.id);
+      let coverBlob = prev ? prev.coverBlob : null;
+      if (coverFile) {
+        coverBlob = new Blob([files[coverFile]], { type: imageTypeOf(coverFile) });
+      }
+      await idb.putBook({ id: manifest.id, title: manifest.title || '', coverBlob });
+    } catch (e) {
+      /* 封面存不进去不影响课程本身 */
     }
     toast(`已导入「${manifest.title}」（${n} 课）`);
     setTimeout(() => toast(credsMsg, credsMsg.includes('失败') || credsMsg.includes('未含')), 1200);
@@ -207,11 +263,17 @@ function renderShelf() {
     })
     .catch(() => {});
 
-  allCourses()
-    .then((courses) => {
+  // 书名/封面：导入课程包时存在 books 存储里（PC 端改过的书名和上传的封面）
+  const coverUrls = [];
+  Promise.all([allCourses(), idb.allBooks().catch(() => [])])
+    .then(([courses, bookRecords]) => {
       if (!courses.length) {
         booksEl.innerHTML = `<div class="empty">书架空空的。点右上角「导入课程包」选择 zip 文件。</div>`;
         return;
+      }
+      const metas = {};
+      for (const m of bookRecords || []) {
+        if (m && m.id) metas[m.id] = m;
       }
       const books = [];
       const byBook = {};
@@ -225,20 +287,27 @@ function renderShelf() {
         byBook[b.bid].sentences += c.count || 0;
       }
       booksEl.innerHTML = books
-        .map(
-          (b) => `
+        .map((b) => {
+          const m = metas[b.bid];
+          const title = (m && m.title) || b.btitle;
+          let cov = '';
+          if (m && m.coverBlob) {
+            cov = URL.createObjectURL(m.coverBlob);
+            coverUrls.push(cov);
+          }
+          return `
         <div class="card course">
-          <span class="course-ico">📚</span>
+          <span class="course-ico${cov ? ' has-cover' : ''}">${cov ? `<img src="${esc(cov)}" alt="" />` : '📚'}</span>
           <div class="course-info">
-            <div class="course-name">${esc(b.btitle)}</div>
+            <div class="course-name">${esc(title)}</div>
             <div class="course-meta">${b.n} 课 · ${b.sentences} 句</div>
           </div>
           <div class="course-acts">
             <button class="btn small primary" data-book="${esc(b.bid)}">打开</button>
             <button class="btn small ghost" data-delbook="${esc(b.bid)}">删除</button>
           </div>
-        </div>`
-        )
+        </div>`;
+        })
         .join('');
 
       booksEl.querySelectorAll('[data-book]').forEach((el) => {
@@ -253,6 +322,7 @@ function renderShelf() {
           for (const c of await allCourses()) {
             if (bookOf(c).bid === bid) await idb.del(c.id);
           }
+          await idb.delBook(bid).catch(() => {});
           route();
           toast('已删除');
         };
@@ -262,7 +332,9 @@ function renderShelf() {
       booksEl.innerHTML = `<div class="empty">读取失败：${esc(e.message || e)}</div>`;
     });
 
-  return () => {};
+  return () => {
+    for (const u of coverUrls) URL.revokeObjectURL(u);
+  };
 }
 
 // ---------- 书内页：单元列表 ----------
@@ -290,6 +362,13 @@ function renderBook(bookID) {
         return;
       }
       $('#bt').textContent = bookOf(mine[0]).btitle;
+      // 课程包带了书名就优先用（PC 端改过的书名）
+      idb
+        .getBook(bookID)
+        .then((m) => {
+          if (m && m.title) $('#bt').textContent = m.title;
+        })
+        .catch(() => {});
       $('#units').innerHTML = mine
         .map(
           (c) => `

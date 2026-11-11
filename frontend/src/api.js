@@ -81,6 +81,11 @@ const webApi = {
   assess: (text, lang, audio) => assessWeb(text, lang, audio, loadLocalSettings()),
   exportBook: () => notInReader('导出课程包'),
   downloadVideos: (id) => notInReader('视频课下载'),
+  // 书名/封面由课程包带着走，手机端只读
+  books: () => Promise.resolve([]),
+  renameBook: () => notInReader('修改书名'),
+  pickCover: () => notInReader('上传封面'),
+  exportBookInfo: () => notInReader('导出书信息'),
   // 视频课文件播放地址：从 IndexedDB 记录里取 Blob
   videoSrc: async (courseId, file) => {
     const c = await idb.get(courseId);
@@ -107,6 +112,12 @@ const wailsApi = {
   assess: (text, lang, audio) => bridge().AssessRecording(text, lang, u8ToB64(audio)),
   exportBook: (id) => bridge().ExportBook(id),
   downloadVideos: (id) => bridge().DownloadVideos(id),
+  // 书籍：改书名 / 换封面（封面图存数据目录，走 /books/<文件名> 访问）
+  books: () => bridge().ListBooks(),
+  renameBook: (id, title) => bridge().RenameBook(id, title),
+  pickCover: (id) => bridge().PickBookCover(id),
+  // 只含书名/封面的小包，改完信息后快速同步到手机
+  exportBookInfo: (id) => bridge().ExportBookInfo(id),
   // 视频课文件播放地址：桌面版直接走内置资源路由
   videoSrc: (courseId, file) => {
     const clean = String(file).replace(/[^a-zA-Z0-9._-]/g, '');

@@ -14,10 +14,14 @@ import (
 )
 
 // bookManifest 是课程包的清单，Reader 导入时按它还原整本书。
+// Cover 是封面在包内的文件名（如 cover.jpg），空表示这本书没有封面。
+// InfoOnly=true 表示这是「只带了书名和封面」的小包，手机端只刷新书架信息。
 type bookManifest struct {
-	ID     string               `json:"id"`
-	Title  string               `json:"title"`
-	Course []model.CourseSummary `json:"courses"`
+	ID       string                `json:"id"`
+	Title    string                `json:"title"`
+	Cover    string                `json:"cover"`
+	InfoOnly bool                  `json:"infoOnly,omitempty"`
+	Course   []model.CourseSummary `json:"courses"`
 }
 
 // bookCourses 找出属于一本书的全部课程摘要（含老课程按 ID 前缀归组）。
@@ -66,7 +70,7 @@ func bookCourses(bookID string) ([]model.CourseSummary, string, error) {
 // ZipBook 把一本书的全部课程打成一个课程包（一次导出、一次导入）。
 // 结构：book.json + <课程ID>/data.json + <课程ID>/audio.wav
 func ZipBook(bookID, dest string) error {
-	summary, bookTitle, err := bookCourses(bookID)
+	summary, _, err := bookCourses(bookID)
 	if err != nil {
 		return err
 	}
@@ -86,10 +90,18 @@ func ZipBook(bookID, dest string) error {
 		return err
 	}
 
-	manifest := bookManifest{ID: bookID, Title: bookTitle, Course: summary}
+	// 封面图一并打进包里，手机端导入后书架直接显示（没有就跳过）
+	coverName, coverBytes := coverOf(bookID)
+
+	manifest := bookManifest{ID: bookID, Title: BookTitle(bookID), Cover: coverName, Course: summary}
 	mb, _ := json.MarshalIndent(manifest, "", "  ")
 	if err := write("book.json", mb); err != nil {
 		return err
+	}
+	if coverName != "" {
+		if err := write(coverName, coverBytes); err != nil {
+			return err
+		}
 	}
 
 	// 把当前评测凭据一并打进课程包：手机端导入后自动写入本地配置，
@@ -138,8 +150,65 @@ func ZipBook(bookID, dest string) error {
 	return f.Close()
 }
 
-// BookTitle 返回书名（导出文件名用）。
+// coverOf 取出封面的包内文件名和字节内容，没有封面返回空。
+func coverOf(bookID string) (string, []byte) {
+	p, ok := CoverPath(bookID)
+	if !ok {
+		return "", nil
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return "", nil
+	}
+	return "cover" + strings.ToLower(filepath.Ext(p)), b
+}
+
+// ZipBookInfo 只打包书名和封面（通常几百 KB），用于改完书名/封面后快速同步到手机，
+// 不必重传整本书的音频和视频。手机端识别 infoOnly 后只刷新书架信息。
+func ZipBookInfo(bookID, dest string) error {
+	f, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	zw := zip.NewWriter(f)
+	write := func(name string, b []byte) error {
+		w, err := zw.Create(name)
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(b)
+		return err
+	}
+
+	coverName, coverBytes := coverOf(bookID)
+	manifest := bookManifest{
+		ID:       bookID,
+		Title:    BookTitle(bookID),
+		Cover:    coverName,
+		InfoOnly: true,
+		Course:   []model.CourseSummary{},
+	}
+	mb, _ := json.MarshalIndent(manifest, "", "  ")
+	if err := write("book.json", mb); err != nil {
+		return err
+	}
+	if coverName != "" {
+		if err := write(coverName, coverBytes); err != nil {
+			return err
+		}
+	}
+	if err := zw.Close(); err != nil {
+		return err
+	}
+	return f.Close()
+}
+
+// BookTitle 返回书名（导出文件名用）。用户在课程库里改过书名就以 books/<id>.json 为准。
 func BookTitle(bookID string) string {
+	if b := LoadBook(bookID); strings.TrimSpace(b.Title) != "" {
+		return b.Title
+	}
 	_, title, err := bookCourses(bookID)
 	if err != nil || title == "" {
 		return bookID

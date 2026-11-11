@@ -104,12 +104,68 @@ func (a *App) CourseData(id string) (model.Course, error) {
 	return store.Load(id)
 }
 
-// DeleteCourse 删除一门课程。
+// DeleteCourse 删除一门课程。删掉一本书的最后一门课时，顺手清掉它的书名/封面。
 func (a *App) DeleteCourse(id string) error {
 	if !store.ValidID(id) {
 		return fmt.Errorf("课程 id 不合法")
 	}
-	return store.Delete(id)
+	if err := store.Delete(id); err != nil {
+		return err
+	}
+	bookID := store.BookIDOf(id)
+	for _, c := range store.List() {
+		if store.BookIDOf(c.ID) == bookID {
+			return nil // 这本书还有别的课，书信息保留
+		}
+	}
+	store.RemoveBook(bookID)
+	return nil
+}
+
+// ---------------- 书籍（书名 / 封面） ----------------
+
+// ListBooks 返回用户改过书名或设过封面的书（没动过的书不出现在这里）。
+func (a *App) ListBooks() []model.BookInfo { return store.Books() }
+
+// RenameBook 改书名，并同步到这本书下所有课程的 meta（导出、Reader 都读那个字段）。
+func (a *App) RenameBook(id, title string) error {
+	if !store.ValidID(id) {
+		return fmt.Errorf("书 id 不合法")
+	}
+	if err := store.RenameBook(id, title); err != nil {
+		return err
+	}
+	logf("书名改为：%s（%s）", strings.TrimSpace(title), id)
+	return nil
+}
+
+// PickBookCover 弹文件选择框，把选中的图片设为这本书的封面。
+// 用户取消时返回当前的书籍信息（不报错）。
+func (a *App) PickBookCover(id string) (model.BookInfo, error) {
+	if !store.ValidID(id) {
+		return model.BookInfo{}, fmt.Errorf("书 id 不合法")
+	}
+	a.mu.Lock()
+	ctx := a.ctx
+	a.mu.Unlock()
+	if ctx == nil {
+		return model.BookInfo{}, fmt.Errorf("窗口未就绪")
+	}
+	path, err := runtime.OpenFileDialog(ctx, runtime.OpenDialogOptions{
+		Title: "选择书籍封面图片",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "图片 (*.jpg;*.png;*.webp;*.gif;*.bmp)", Pattern: "*.jpg;*.jpeg;*.png;*.webp;*.gif;*.bmp"},
+		},
+	})
+	if err != nil || path == "" {
+		return store.LoadBook(id), err
+	}
+	info, err := store.SetBookCover(id, path)
+	if err != nil {
+		return model.BookInfo{}, err
+	}
+	logf("设置封面：%s（%s）", filepath.Base(path), id)
+	return info, nil
 }
 
 // DownloadVideos 为已有课程补下载教学视频课（本地 mp4，离线播放）。
@@ -208,6 +264,35 @@ func (a *App) ExportBook(id string) (string, error) {
 		return "", err
 	}
 	logf("导出课程包：%s（%s）", path, title)
+	return path, nil
+}
+
+// ExportBookInfo 只导出书名和封面（小包，几百 KB）。改完书名/封面后用这个同步到手机，
+// 不必重传整本书的音频和视频；手机端导入后只刷新书架上的书名和封面。
+func (a *App) ExportBookInfo(id string) (string, error) {
+	if !store.ValidID(id) {
+		return "", fmt.Errorf("课程 id 不合法")
+	}
+	bookID := store.BookIDOf(id)
+	a.mu.Lock()
+	ctx := a.ctx
+	a.mu.Unlock()
+	if ctx == nil {
+		return "", fmt.Errorf("窗口未就绪")
+	}
+	title := store.BookTitle(bookID)
+	path, err := runtime.SaveFileDialog(ctx, runtime.SaveDialogOptions{
+		Title:           "导出书名/封面（小包）",
+		DefaultFilename: title + "-书信息.zip",
+		Filters:         []runtime.FileFilter{{DisplayName: "ReadAlong 书信息包 (*.zip)", Pattern: "*.zip"}},
+	})
+	if err != nil || path == "" {
+		return "", err
+	}
+	if err := store.ZipBookInfo(bookID, path); err != nil {
+		return "", err
+	}
+	logf("导出书信息：%s（%s）", path, title)
 	return path, nil
 }
 

@@ -64,7 +64,7 @@ func main() {
 	}
 }
 
-// newAssetHandler 把 /courses/* 指到数据目录，其余交给前端静态资源。
+// newAssetHandler 把 /courses/* 和 /books/* 指到数据目录，其余交给前端静态资源。
 func newAssetHandler(assetsFS fs.FS) http.Handler {
 	fileServer := http.FileServer(http.FS(assetsFS))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,8 +72,32 @@ func newAssetHandler(assetsFS fs.FS) http.Handler {
 			serveCourseFile(w, r)
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/books/") {
+			serveBookFile(w, r)
+			return
+		}
 		fileServer.ServeHTTP(w, r)
 	})
+}
+
+// serveBookFile 提供书籍封面（books 目录下的单层文件，如 BV1xxx.jpg）。
+func serveBookFile(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/books/")
+	if name == "" || strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") {
+		http.NotFound(w, r)
+		return
+	}
+	if id := strings.TrimSuffix(name, filepath.Ext(name)); !store.ValidID(id) {
+		http.NotFound(w, r)
+		return
+	}
+	p := filepath.Join(config.BooksDir, name)
+	if !store.FileExists(p) {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-cache")
+	http.ServeFile(w, r, p)
 }
 
 func serveCourseFile(w http.ResponseWriter, r *http.Request) {

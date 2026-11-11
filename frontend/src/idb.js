@@ -1,15 +1,23 @@
-// Reader 模式的课程仓库：课程包（zip 解开后）存 IndexedDB，纯前端、无后端。
-// 一条记录 = { id, title, source, uploader, duration, count, created, data, audioBlob }
+// Reader 模式的本地仓库：课程包（zip 解开后）存 IndexedDB，纯前端、无后端。
+// courses: 一条记录 = { id, title, source, uploader, duration, count, created, data, audioBlob, videoBlobs }
+// books:   一条记录 = { id, title, coverBlob }（书的书名与封面，来自课程包）
 
 const DB_NAME = 'readalong-reader';
-const STORE = 'courses';
+const COURSES = 'courses';
+const BOOKS = 'books';
+const DB_VERSION = 2;
 
 function open() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(STORE)) {
-        req.result.createObjectStore(STORE, { keyPath: 'id' });
+      const db = req.result;
+      if (!db.objectStoreNames.contains(COURSES)) {
+        db.createObjectStore(COURSES, { keyPath: 'id' });
+      }
+      // v2 新增：书名/封面单独存，不用把图片在每门课里重复一份
+      if (!db.objectStoreNames.contains(BOOKS)) {
+        db.createObjectStore(BOOKS, { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -17,12 +25,12 @@ function open() {
   });
 }
 
-function run(mode, fn) {
+function run(store, mode, fn) {
   return open().then(
     (db) =>
       new Promise((resolve, reject) => {
-        const t = db.transaction(STORE, mode);
-        const req = fn(t.objectStore(STORE));
+        const t = db.transaction(store, mode);
+        const req = fn(t.objectStore(store));
         t.oncomplete = () => {
           db.close();
           resolve(req ? req.result : undefined);
@@ -36,8 +44,13 @@ function run(mode, fn) {
 }
 
 export const idb = {
-  put: (course) => run('readwrite', (s) => s.put(course)),
-  get: (id) => run('readonly', (s) => s.get(id)),
-  del: (id) => run('readwrite', (s) => s.delete(id)),
-  all: () => run('readonly', (s) => s.getAll()),
+  put: (course) => run(COURSES, 'readwrite', (s) => s.put(course)),
+  get: (id) => run(COURSES, 'readonly', (s) => s.get(id)),
+  del: (id) => run(COURSES, 'readwrite', (s) => s.delete(id)),
+  all: () => run(COURSES, 'readonly', (s) => s.getAll()),
+
+  putBook: (book) => run(BOOKS, 'readwrite', (s) => s.put(book)),
+  getBook: (id) => run(BOOKS, 'readonly', (s) => s.get(id)),
+  delBook: (id) => run(BOOKS, 'readwrite', (s) => s.delete(id)),
+  allBooks: () => run(BOOKS, 'readonly', (s) => s.getAll()),
 };
