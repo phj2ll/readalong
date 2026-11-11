@@ -38,6 +38,13 @@ function route() {
 }
 window.addEventListener('hashchange', route);
 
+// 回书架：改 hash 会触发 hashchange→route()，再手动 route() 会渲染两遍（书架闪一下，
+// 封面 Blob URL 也会白白创建两次）
+function goHome() {
+  if (location.hash === '' || location.hash === '#' || location.hash === '#/') route();
+  else location.hash = '#/';
+}
+
 // ---------- 导入课程包（整本书 / 单个课程 / 只含书名封面的小包） ----------
 
 // 封面在包里的文件名：优先 book.json 声明的，其次按 cover.<ext> 找
@@ -59,14 +66,22 @@ async function importPackage(file) {
     toast('请选择 .zip 课程包（桌面 Studio 的「导出整本书」生成）', true);
     return;
   }
-  let files;
+  let raw;
   try {
-    files = unzipSync(new Uint8Array(await file.arrayBuffer()));
+    raw = unzipSync(new Uint8Array(await file.arrayBuffer()));
   } catch (e) {
     toast('课程包解压失败：' + (e.message || e), true);
     return;
   }
-  const names = Object.keys(files);
+  // 有些打包工具（Windows 资源管理器「压缩为 zip」）用反斜杠做条目分隔符，
+  // 不符合 ZIP 规范；不统一成正斜杠的话 <课程ID>/data.json 一个都匹配不上
+  const names = [];
+  const files = {};
+  for (const n of Object.keys(raw)) {
+    const k = n.replace(/\\/g, '/');
+    names.push(k);
+    files[k] = raw[n];
+  }
   const text = (n) => new TextDecoder().decode(files[n]);
 
   // 课程包里附带了评测凭据（PC 导出时写入 app-settings.json）：自动配置，免手填
@@ -143,8 +158,7 @@ async function importPackage(file) {
         return;
       }
       toast(`已更新「${manifest.title}」的书名和封面`);
-      location.hash = '#/';
-      route();
+      goHome();
       return;
     }
 
@@ -179,8 +193,7 @@ async function importPackage(file) {
     }
     toast(`已导入「${manifest.title}」（${n} 课）`);
     setTimeout(() => toast(credsMsg, credsMsg.includes('失败') || credsMsg.includes('未含')), 1200);
-    location.hash = '#/';
-    route();
+    goHome();
     return;
   }
 
@@ -195,8 +208,7 @@ async function importPackage(file) {
     const data = JSON.parse(text(dataFile));
     await put(data, new Blob([files[audioFile]], { type: 'audio/wav' }));
     toast(`已导入「${data.title || data.id}」`);
-    location.hash = '#/';
-    route();
+    goHome();
   } catch (e) {
     toast('data.json 解析失败', true);
   }

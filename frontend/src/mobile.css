@@ -430,9 +430,10 @@ body.mobile .focus-text {
   outline: none;
   word-break: break-word;
   max-width: 100%;
-  /* 单词本身仍可点选修改 */
-  user-select: text;
-  -webkit-user-select: text;
+  /* 手机端只读：不让孩子滑动/长按时选中文字或弹出键盘 */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 body.mobile .focus-score {
