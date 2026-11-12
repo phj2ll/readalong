@@ -1,5 +1,6 @@
 import { idb } from './idb.js';
 import { assessWeb } from './ise.js';
+import { recstore } from './recstore.js';
 
 // 双模式：桌面（Wails，window.go 注入）走 Go 桥接；
 // Reader（纯浏览器，无后端）走 IndexedDB + JS 评分客户端。
@@ -78,7 +79,11 @@ const webApi = {
       URL.revokeObjectURL(url);
       audioUrls.delete(id);
     }
-    return idb.del(id);
+    // 录音另存一个库，删课程时一起清掉，别留孤儿数据
+    return recstore
+      .clear(id)
+      .catch(() => {})
+      .then(() => idb.del(id));
   },
   openDataDir: () => notInReader('数据目录'),
   openURL: (u) => {
@@ -120,7 +125,11 @@ const wailsApi = {
   course: (id) => bridge().CourseData(id),
   create: (url, lang) => bridge().CreateCourse(url, lang),
   job: (id) => bridge().Job(id),
-  del: (id) => bridge().DeleteCourse(id),
+  del: async (id) => {
+    // 录音不在课程目录里，删课前先把 IndexedDB 里这门课的录音清掉
+    await recstore.clear(id).catch(() => {});
+    return bridge().DeleteCourse(id);
+  },
   openDataDir: () => bridge().OpenDataDir(),
   openURL: (u) => bridge().OpenURL(u),
   settings: () => bridge().GetSettings(),

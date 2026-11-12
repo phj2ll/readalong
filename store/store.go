@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"readalong/config"
 	"readalong/model"
@@ -52,6 +51,8 @@ func pageSuffix(rawURL string) string {
 }
 
 // CourseIDFromURL 生成稳定的课程目录名，同一个分 P 命中同一个目录。
+// 已经有 data.json 的目录直接复用（重新生成就是覆盖这门课），
+// 只有生成到一半留下的空目录才让位给 base_2、base_3…
 func CourseIDFromURL(rawURL string) string {
 	base := baseID(rawURL, pageSuffix(rawURL))
 
@@ -59,9 +60,6 @@ func CourseIDFromURL(rawURL string) string {
 	for i := 2; DirExists(filepath.Join(config.CoursesDir, cid)) &&
 		!FileExists(filepath.Join(config.CoursesDir, cid, "data.json")); i++ {
 		cid = base + "_" + strconv.Itoa(i)
-	}
-	if FileExists(filepath.Join(config.CoursesDir, cid, "data.json")) {
-		cid = base + "_" + time.Now().Format("150405")
 	}
 	return cid
 }
@@ -111,17 +109,26 @@ func ValidID(id string) bool {
 }
 
 // Save 把课程写到磁盘：audio.wav + data.json + meta.json。
+// 重新生成会覆盖已有课程，所以音频先落到临时名再换上去：
+// 中途失败（磁盘满、旧文件被播放器占着）时旧课程的音频还在，不会只剩半门课。
 func Save(c model.Course, wavPath string) error {
 	dir := filepath.Join(config.CoursesDir, c.ID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	audio := filepath.Join(dir, "audio.wav")
-	if FileExists(audio) {
-		_ = os.Remove(audio)
-	}
-	if err := moveFile(wavPath, audio); err != nil {
+	tmp := audio + ".tmp"
+	_ = os.Remove(tmp) // 上一次崩在中途可能留下半截临时文件
+	if err := moveFile(wavPath, tmp); err != nil {
 		return err
+	}
+	if err := os.Rename(tmp, audio); err != nil {
+		// Windows 上旧音频还被播放器打开时 Rename 会失败，退化成先删再挪
+		_ = os.Remove(audio)
+		if err := os.Rename(tmp, audio); err != nil {
+			_ = os.Remove(tmp)
+			return err
+		}
 	}
 	if err := writeJSON(filepath.Join(dir, "data.json"), c); err != nil {
 		return err

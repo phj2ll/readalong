@@ -1,4 +1,5 @@
 import { api, esc, fmtTime, isWails, toast } from '../api.js';
+import { recstore } from '../recstore.js';
 
 const MODES = [
   { key: 'loop', label: '单句循环' },
@@ -244,8 +245,17 @@ export function renderPlayer(root, courseId) {
     playSegment(i, () => startRec(i));
   }
 
-  function playMine(i) {
-    const blob = state.mine.get(i);
+  async function playMine(i) {
+    // state.mine 只是本次会话的缓存；录音本体在 IndexedDB 里，没缓存就去捞一次
+    let blob = state.mine.get(i);
+    if (!blob) {
+      try {
+        blob = await recstore.get(courseId, i);
+      } catch (e) {
+        blob = undefined;
+      }
+      if (blob) state.mine.set(i, blob);
+    }
     if (!blob) {
       toast('这句还没录音', true);
       return;
@@ -265,6 +275,16 @@ export function renderPlayer(root, courseId) {
   }
 
   // ---------- 录音 ----------
+  // 进课程时把存过的录音读回缓存，否则刷新后「我的录音」全是空的
+  async function loadClips() {
+    try {
+      const saved = await recstore.all(courseId);
+      for (const [idx, blob] of saved) state.mine.set(idx, blob);
+    } catch (e) {
+      /* 读不出来就当没录过，不影响练习 */
+    }
+  }
+
   async function startRec(i) {
     if (state.recording) {
       stopRec();
@@ -301,6 +321,8 @@ export function renderPlayer(root, courseId) {
       const blob = new Blob(state.chunks, { type: 'audio/webm' });
       const idx = state.recIndex;
       state.mine.set(idx, blob);
+      // 落盘（IndexedDB）：重录覆盖同一条，刷新后还能回放对比
+      recstore.put(courseId, idx, blob).catch(() => toast('录音保存失败，本次仍可回放', true));
       state.done.add(idx);
       saveDone();
       updateCount();
@@ -1198,13 +1220,14 @@ export function renderPlayer(root, courseId) {
 
   api
     .course(courseId)
-    .then((data) => {
+    .then(async (data) => {
       state.data = data;
       $('#title').textContent = data.title || '跟读练习';
       document.title = data.title || 'ReadAlong';
       audio.src = data.audio || `/courses/${courseId}/audio.wav`;
       audio.playbackRate = state.rate;
       setMode('loop');
+      await loadClips(); // 先把存过的录音读回来再渲染，免得状态和实际不一致
       if (state.data.segments.some((s) => s.section)) {
         renderTasks(); // 合并课程（多分段）：先看任务列表
       } else {

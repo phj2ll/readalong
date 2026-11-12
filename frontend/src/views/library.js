@@ -1,4 +1,5 @@
 import { api, esc, fmtTime, toast } from '../api.js';
+import { clearPractice } from '../recstore.js';
 
 // 评测设置弹窗（桌面版和 Reader 共用）
 export function openSettingsModal() {
@@ -443,7 +444,9 @@ export function renderLibrary(root) {
             $('#url').value = '';
             refresh();
             if (j.courseId) {
-              toast('课程已生成');
+              // 覆盖生成：时间轴变了，旧的进度/评分/录音都按句号索引，留着会指向别的句子
+              if (j.replaced) await clearPractice(j.courseId);
+              toast(j.replaced ? '课程已重新生成（旧练习记录已清空）' : '课程已生成');
               location.hash = `/play/${encodeURIComponent(j.courseId)}`;
             } else {
               toast('批量生成完成，课程列表见下方');

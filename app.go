@@ -344,6 +344,8 @@ func (a *App) CreateCourse(rawURL, lang string) (model.Job, error) {
 	}
 
 	cid := store.CourseIDFromURL(rawURL)
+	// 同一链接重新生成：目录不变，直接覆盖这门课，不再另造副本
+	replaced := store.CourseExists(cid)
 	j := a.newJob()
 
 	go func() {
@@ -364,6 +366,12 @@ func (a *App) CreateCourse(rawURL, lang string) (model.Job, error) {
 				a.runBatch(j, rawURL, lang, pages)
 				return
 			}
+		}
+
+		// 确认走单 P 生成，才有「覆盖旧课程」这回事（多 P 是另一套目录规则）
+		if replaced {
+			j.log("这个链接已经生成过，本次覆盖旧课程（旧的练习进度、评分和录音会清空）")
+			j.set(func(d *model.Job) { d.Replaced = true })
 		}
 
 		res, err := domain.Run(rawURL, cid, lang, jobProgress{j: j})

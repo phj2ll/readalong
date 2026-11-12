@@ -124,6 +124,10 @@ readalong-wails/
 │   └── src/
 │       ├── main.js              hash 路由：#/ 课程库、#/play/<id> 练习页
 │       ├── api.js               Wails bridge 封装 + esc/fmtTime/toast
+│       ├── idb.js               Reader 模式课程包仓库（IndexedDB）
+│       ├── recstore.js          跟读录音仓库（IndexedDB）+ clearPractice，见 8.2
+│       ├── ise.js               Reader 模式下的讯飞评测客户端（纯前端）
+│       ├── reader.js            Reader（纯浏览器）入口，复用 renderPlayer
 │       ├── style.css            全站样式（浅色，米白底 #f7f7f5 + 蓝色主色 #185fa5）
 │       └── views/
 │           ├── library.js       新建表单、模型下载进度、课程卡片、任务轮询
@@ -157,7 +161,8 @@ logs\readalong.log               运行日志（同时输出到 stderr）
 ### courseID 规则（`store.CourseIDFromURL`）
 
 - 从 URL 里抓 `BVxxxxxxxxxx`，有 `p=` 参数就拼成 `BV1qR4fesEm6_p21`
-- 如果该目录已存在且有 `data.json` → 追加 `_HHMMSS` 后缀（**不会覆盖**，见 §8.1）
+- 同一个分 P 永远是同一个目录：目录里已有 `data.json` 就**覆盖**这门课（见 §8.1），
+  只有生成到一半留下的空目录才会让位给 `_2`、`_3`
 - 只保留 `[0-9A-Za-z_.-]`，用作 `ValidID` 白名单，防目录穿越
 
 ### data.json 结构
@@ -356,29 +361,44 @@ git clone git@github.com:phj2ll/readalong.git
 
 ## 8. 已知问题 / 待优化
 
-### 8.1 重新生成同一链接会产生副本（**优先修**）
+### 8.1 重新生成同一链接会产生副本（**已修**）
 
-`store.CourseIDFromURL` 的注释写"同一个分 P 命中同一个目录"，但实际行为是
-发现有 `data.json` 就追加时间后缀，生成 `BV1qR4fesEm6_p22_160512` 这样的新课程。
+老行为：`store.CourseIDFromURL` 发现有 `data.json` 就追加时间后缀，
+于是同一个分 P 生成出 `BV1qR4fesEm6_p22_160512` 这样的第二门课，练习进度还按 id 走、等于清零。
 
-两种合理改法，二选一：
-- **覆盖**：直接返回 base id，`Save` 覆盖旧数据（用户手动改过的句子文本会丢，但进度是存 localStorage 的，按 id 走，会保留）
-- **提示**：前端检测到已存在，问用户"覆盖还是新建"
+现在改成**覆盖**：
 
-建议做覆盖，并同步把 `ra.done.<id>` 的旧进度保留下来。
+- `store.CourseIDFromURL` 直接返回 base id，只有「生成到一半留下的空目录」才让位给 `base_2`、`base_3`
+- `app.CreateCourse` 先用 `store.CourseExists(cid)` 判断，是覆盖就写进 job 日志，
+  并在 `model.Job.Replaced` 上打标记
+- 前端（`views/library.js`）看到 `replaced` 就调 `clearPractice(courseId)`
+  把 `ra.done` / `ra.edits` / `ra.score` 和录音一起清掉 ——
+  句子时间轴已经变了，这些按句号索引的数据留着只会指向别的句子
 
-### 8.2 录音只存内存
+批量生成（`runBatch`）仍是我行我素地「已存在就跳过」，要重来请先在课程库删掉整本书。
 
-`player.js` 用 `state.mine = new Map()` 存 Blob，刷新/切换课程即丢。
-要持久化得走 IndexedDB（Blob 可以直接存），或调后端落文件。
-考虑到用户是个人自用，IndexedDB 更简单，不必动 Go 侧。
+### 8.2 录音只存内存（**已修**）
 
-### 8.3 无评分
+老行为：`player.js` 用 `state.mine = new Map()` 存 Blob，刷新/切课程即丢（分数在 localStorage 里还在，
+但点「我的录音」只会提示「这句还没录音」）。
 
-跟读的核心价值一半在打分。方案：
-- **Azure Pronunciation Assessment**：有免费额度，需要 key，前端直连有跨域问题，建议 Go 侧加一个转发方法
-- **讯飞 ISE**：国内延迟低，WebSocket 流式，需要做鉴权签名
-- 两者都只需要「参考文本 + 用户录音」，与视频音轨质量无关
+现在录音落到 IndexedDB（`frontend/src/recstore.js`，库名 `readalong-clips`）：
+
+- key = `<courseId>#<句号>`，每句只留最新一条（重录覆盖），占用上限 = 句数 × 单条录音
+- 进课程时 `loadClips()` 先把整门课读回 `state.mine` 再渲染；`playMine` 没缓存时再兜底查一次
+- 删课程（`api.del`）时顺带清掉这门课的录音，不留孤儿数据
+- 桌面版和 Reader 共用这套（都是浏览器 IndexedDB，Go 侧不用动）
+
+### 8.3 无评分（**已完成**，原方案留档）
+
+最终用的是**讯飞 ISE 流式评测**（`domain/ise.go` + `frontend/src/ise.js`）：
+
+- 桌面版走 `app.AssessRecording`（Go 侧 WebSocket + 鉴权签名），Reader 走 `ise.js` 纯前端实现
+- 凭据存 `settings.json`（课程库右上角「评测设置」），三项齐全才会自动评分
+- 录完自动送评，分数只保留历史最好成绩（`ra.score.<courseId>`）；
+  焦点卡显示总分 + 准确/流利明细，列表页显示分数徽标
+- 坑都在 `domain/ise.go` 注释里：JSON 键顺序、日期必须 `GMT` 而非 `UTC`、
+  签名原文用 `GET`、英文试题要带 `[word]`/`[content]` 节点、40ms 一帧慢慢灌
 
 ### 8.4 旧 Python 版数据不兼容
 
@@ -427,11 +447,9 @@ whisper.cpp 不认，只认 `models\ggml-<name>.bin`。所以首次运行会重�
    ```
    用 `https://www.bilibili.com/video/BV1qR4fesEm6/?p=23` 走一遍生成流程。
 
-2. **修 §8.1 的重复课程问题**（用户最容易碰到的体验问题）
+2. ~~修 §8.1 的重复课程问题~~ / ~~录音持久化（§8.2）~~ / ~~加评分（§8.3）~~ —— 已做完
 
-3. **录音持久化（§8.2）**，然后**加评分（§8.3）** —— 这两个做完产品才算完整
-
-4. 细节打磨：
+3. 细节打磨：
    - 播放页加"上一句/下一句"按钮
    - 长课程加筛选（只看未练）
    - 生成失败时的错误提示更具体（目前是把 yt-dlp/ffmpeg 的 stderr 尾部截一段）

@@ -7,6 +7,7 @@ import './mobile.css';
 import { unzipSync } from 'fflate';
 import { api, esc, fmtTime, toast } from './api.js';
 import { idb } from './idb.js';
+import { recstore } from './recstore.js';
 import { renderPlayer } from './views/player.js';
 import { openSettingsModal } from './views/library.js';
 
@@ -332,7 +333,10 @@ function renderShelf() {
           if (!confirm('删除这本书的全部课程？')) return;
           const bid = el.dataset.delbook;
           for (const c of await allCourses()) {
-            if (bookOf(c).bid === bid) await idb.del(c.id);
+            if (bookOf(c).bid === bid) {
+              await recstore.clear(c.id).catch(() => {});
+              await idb.del(c.id);
+            }
           }
           await idb.delBook(bid).catch(() => {});
           route();
@@ -406,6 +410,7 @@ function renderBook(bookID) {
       $('#units').querySelectorAll('[data-del]').forEach((el) => {
         el.onclick = async () => {
           if (!confirm('删除这门课？')) return;
+          await recstore.clear(el.dataset.del).catch(() => {});
           await idb.del(el.dataset.del);
           route();
           toast('已删除');

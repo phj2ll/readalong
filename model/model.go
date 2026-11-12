@@ -59,6 +59,9 @@ type Job struct {
 	Log      []string `json:"log"`
 	CourseID string   `json:"courseId"`
 	Error    string   `json:"error"`
+	// Replaced 表示这门课的链接已经生成过、这次是覆盖旧课程，
+	// 前端据此清掉旧的练习进度/评分/录音（时间轴已经变了，留着会错位）。
+	Replaced bool `json:"replaced,omitempty"`
 }
 
 // ModelState 是语音模型下载状态，前端顶部进度条用。
