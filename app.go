@@ -47,6 +47,39 @@ func (a *App) startup(ctx context.Context) {
 		logf("语音模型未就绪，开始后台下载：%s", config.ModelPath(config.DefaultModel))
 		domain.EnsureModelAsync(config.DefaultModel)
 	}
+	// 老课程的单词页时间轴是 whisper 的兜底网格/漂移值，模型就绪后后台校正一次。
+	if domain.ModelReady(config.DefaultModel) {
+		go a.migrateWordTimeline()
+	}
+}
+
+// migrateWordTimeline 把老课程里单词页的时间轴按音频重建一遍（逐段复听 + 内容对齐）。
+// 只做一次：修完给课程打上 AlignVersion 标记。跑在后台，不挡界面。
+func (a *App) migrateWordTimeline() {
+	for _, s := range store.List() {
+		c, err := store.Load(s.ID)
+		if err != nil || c.AlignVersion >= domain.WordAlignVersion {
+			continue
+		}
+		wav := filepath.Join(config.CoursesDir, c.ID, "audio.wav")
+		clean := c
+		modelName := config.ModelName(c.Lang)
+		lang := c.Lang
+		if lang == "" {
+			lang = "auto"
+		}
+		read := func(clip string) (string, error) { return domain.RecognizeClip(clip, lang, modelName) }
+		fixed := domain.RepairWordTimeline(&clean, wav, read)
+		clean.AlignVersion = domain.WordAlignVersion
+		if err := store.SaveData(clean); err != nil {
+			logf("课程 %s 单词时间轴校正失败：%v", c.ID, err)
+			continue
+		}
+		_ = store.SaveMeta(clean)
+		if fixed > 0 {
+			logf("课程 %s 单词时间轴已校正：%d 段（%d -> %d 句）", c.ID, fixed, len(c.Segments), len(clean.Segments))
+		}
+	}
 }
 
 func (a *App) shutdown(ctx context.Context) {

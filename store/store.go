@@ -149,6 +149,25 @@ func SaveData(c model.Course) error {
 	return writeJSON(filepath.Join(dir, "data.json"), c)
 }
 
+// SaveMeta 只重写课程库卡片信息，句子数变了（比如校正丢掉了多余词）时用。
+func SaveMeta(c model.Course) error {
+	dir := filepath.Join(config.CoursesDir, c.ID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return writeJSON(filepath.Join(dir, "meta.json"), model.CourseSummary{
+		ID:        c.ID,
+		Title:     c.Title,
+		Source:    c.Source,
+		Uploader:  c.Uploader,
+		Duration:  c.Duration,
+		Count:     len(c.Segments),
+		Created:   c.Created,
+		BookID:    c.BookID,
+		BookTitle: c.BookTitle,
+	})
+}
+
 // List 按创建时间倒序返回全部课程摘要。
 func List() []model.CourseSummary {
 	items := []model.CourseSummary{}

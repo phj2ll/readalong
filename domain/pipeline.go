@@ -121,9 +121,17 @@ func Run(rawURL, courseID, lang string, p Progress) (Result, error) {
 
 	// 5. 切句
 	p.Step("切句与排版", 94)
-	segs := AddSections(BuildSegments(rawSegs, false), 3.5)
+	wordPage := pageKind(info.Title) == "word"
+	segs := AddSections(BuildSegments(rawSegs, wordPage), 3.5)
 	if len(segs) == 0 {
 		return Result{}, fmt.Errorf("切句结果为空，可能是纯音乐或噪音")
+	}
+	if wordPage {
+		read := func(clip string) (string, error) { return RecognizeClip(clip, asrLang, modelName) }
+		if fixed, ok := AlignWordPage(wav, segs, read); ok {
+			segs = fixed
+			p.Log(fmt.Sprintf("按发音位置校正了单词时间轴（%d 个词）", len(segs)))
+		}
 	}
 
 	p.Log(fmt.Sprintf("切出 %d 句", len(segs)))
@@ -137,15 +145,16 @@ func Run(rawURL, courseID, lang string, p Progress) (Result, error) {
 
 	return Result{
 		Course: model.Course{
-			ID:       courseID,
-			Title:    title,
-			Source:   rawURL,
-			Uploader: info.Uploader,
-			Duration: Round1(duration),
-			Audio:    "/courses/" + courseID + "/audio.wav",
-			Lang:     detected,
-			Created:  time.Now().Format("2006-01-02 15:04"),
-			Segments: segs,
+			ID:           courseID,
+			Title:        title,
+			Source:       rawURL,
+			Uploader:     info.Uploader,
+			Duration:     Round1(duration),
+			Audio:        "/courses/" + courseID + "/audio.wav",
+			Lang:         detected,
+			Created:      time.Now().Format("2006-01-02 15:04"),
+			Segments:     segs,
+			AlignVersion: WordAlignVersion,
 		},
 		WavPath: staging,
 	}, nil
@@ -487,10 +496,20 @@ func RunGrouped(rawURL, courseID, lang, label string, group []GroupPage, p Progr
 		}
 
 		// 单词分 P 用单词表切分规则（逗号即边界、停顿阈值 0.4s）
-		pageSegs := BuildSegments(rawSegs, pageKind(gp.Title) == "word")
+		wordPage := pageKind(gp.Title) == "word"
+		pageSegs := BuildSegments(rawSegs, wordPage)
 		if len(pageSegs) == 0 {
 			sub.Log("没有识别到内容，跳过这个分 P")
 			continue
+		}
+		if wordPage {
+			// whisper 对「一个词一段静音」的单词跟读音频会给退化时间戳
+			// （每词固定 0.4s、按 2s 等距排开），改成逐段复听 + 真实发声区间落点。
+			read := func(clip string) (string, error) { return RecognizeClip(clip, asrLang, modelName) }
+			if fixed, ok := AlignWordPage(wav, pageSegs, read); ok {
+				pageSegs = fixed
+				sub.Log(fmt.Sprintf("按发音位置校正了单词时间轴（%d 个词）", len(pageSegs)))
+			}
 		}
 		for i := range pageSegs {
 			pageSegs[i].Start += offset
@@ -526,15 +545,16 @@ func RunGrouped(rawURL, courseID, lang, label string, group []GroupPage, p Progr
 
 	return Result{
 		Course: model.Course{
-			ID:       courseID,
-			Title:    title,
-			Source:   rawURL,
-			Uploader: uploader,
-			Duration: Round1(offset),
-			Audio:    "/courses/" + courseID + "/audio.wav",
-			Lang:     detected,
-			Created:  time.Now().Format("2006-01-02 15:04"),
-			Segments: segs,
+			ID:           courseID,
+			Title:        title,
+			Source:       rawURL,
+			Uploader:     uploader,
+			Duration:     Round1(offset),
+			Audio:        "/courses/" + courseID + "/audio.wav",
+			Lang:         detected,
+			Created:      time.Now().Format("2006-01-02 15:04"),
+			Segments:     segs,
+			AlignVersion: WordAlignVersion,
 		},
 		WavPath: staging,
 	}, nil

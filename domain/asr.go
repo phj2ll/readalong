@@ -2,6 +2,7 @@ package domain
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -130,6 +131,40 @@ func Transcribe(wav, lang, modelName string, progress func(pct int)) ([]RawSegme
 		detected = lang
 	}
 	return rawSegmentsFrom(parsed), detected, nil
+}
+
+// RecognizeClip 只识别一小段音频并返回文本，不给时间戳。
+// 单词页要逐段复听、按「听到的词」给每段落点，用它。
+func RecognizeClip(wavPath, lang, modelName string) (string, error) {
+	cli, err := EnsureWhisper()
+	if err != nil {
+		return "", err
+	}
+	if !ModelReady(modelName) {
+		return "", fmt.Errorf("语音模型 %s 还没下载完，等它下完再生成", modelName)
+	}
+	threads := runtime.NumCPU()
+	if threads > 8 {
+		threads = 8
+	}
+	if threads < 2 {
+		threads = 2
+	}
+	cmd := NewCmd(cli,
+		"-m", config.ModelPath(modelName),
+		"-f", wavPath,
+		"-l", lang,
+		"-t", strconv.Itoa(threads),
+		"-bs", "5",
+		"-nt", "-np",
+	)
+	var errb bytes.Buffer
+	cmd.Stderr = &errb
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("复听片段失败：%v %s", err, tail(errb.String(), 160))
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // rawSegmentsFrom 把 whisper 原始片段转成内部结构（秒 + 词级时间）。

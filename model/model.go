@@ -33,6 +33,8 @@ type Course struct {
 	BookTitle string     `json:"bookTitle,omitempty"`
 	Videos    []VideoRef `json:"videos,omitempty"`
 	Segments  []Segment  `json:"segments"`
+	// AlignVersion 是单词页时间轴的校正版本，老课程启动时会按音频重做一次。
+	AlignVersion int `json:"alignVersion,omitempty"`
 }
 
 // CourseSummary 用于课程库列表，落盘为 meta.json。

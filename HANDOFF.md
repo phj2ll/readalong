@@ -110,6 +110,7 @@ readalong-wails/
 │   ├── tools.go                 外部程序查找与自举下载（yt-dlp/ffmpeg/whisper）
 │   ├── modeldl.go               语音模型下载（hf-mirror 优先）
 │   ├── asr.go                   whisper-cli 调用 + token 级时间戳还原成词
+│   ├── align.go                 单词页时间戳按音频能量重排（见 5.3）
 │   ├── segment.go               文本清洗、拼词、断句、分段
 │   ├── pipeline.go              五步流水线编排
 │   ├── proc_windows.go          Windows 子进程创建（关键：CREATE_NO_WINDOW）
@@ -217,6 +218,31 @@ whisper 的 token 是 BPE 子词，不保证和"词"对齐。做法：
 4. 拼回文本时中文之间不插空格、标点前不插空格（`JoinWords`）
 
 `domain/domain_test.go` 用真实识别输出 `testdata/whisper_sample.json` 钉住了这个行为，**改动这块必须让测试继续通过**。
+
+### 5.3 单词页时间轴要按音频重建（`domain/align.go`）
+
+单词分 P 是「一个词、一段静音」的节奏，whisper 对这种音频给出的词级时间戳**不可用**：
+
+- 退化成假网格：每词固定 0.4s、起点按 2s 等距排开、结尾对齐整秒（Unit6/Unit2 实测：18 个词里 9 个落在 -91dB 的数字静音上）
+- 或者整体漂移：位置看着"像"，实际错开一两个词（Unit4 后半段：标注 `Very` 的位置听到的是 `ah`，`School` 的位置听到 `old`）
+- 还会多出音频里根本没有的词（Unit2 末尾凭空多出 `One Two Three`）
+
+只按位置怎么调都救不回来（漂移量常常接近词间距），所以单词页（`pageKind == "word"`）
+改走**内容对齐**，`AlignWordPage`：
+
+1. 20ms 一帧算 dBFS，用这一段自己的噪声底/峰值定阈值，取出发声段（一个词一段）
+2. 每段切出来单独复听（`RecognizeClip`），得到那一段真正念的是什么
+3. 词和发声段做**单调 DP** 配对：代价 = 文字相似度（主）+ 位置（辅）
+   - 一个段可以承载多个词，但仅限那段确实含这个词（`Chinese New Year`）；
+     一段只念了一个词却要塞两个词，判为识别重复，丢掉
+   - 后面的发声段还够用时不许挤在同一段（挤了会让后面的词整体错位）
+4. 音频里确实没有的词直接丢弃；几个词共用一个段时按字数摊时间
+
+`WordAlignVersion` 是算法版本：生成课程时写进 `data.json`，老课程在启动后台
+`migrateWordTimeline` 里重做一次（音频和 whisper 都已在本地），不会每次启动都跑。
+
+> 逐段复听是每个发声段起一次 whisper 进程，一个单词页 15~25 个词大约多花 10~20 秒，
+> 只在单词分 P 上付这个代价；拿不到 whisper（模型没下完）时退回纯位置吸附。
 
 ---
 
