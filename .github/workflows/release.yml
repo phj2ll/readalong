@@ -51,34 +51,6 @@ jobs:
             || true
           gh release upload "$GITHUB_REF_NAME" build/bin/readalong.exe --clobber
 
-  # ReadAlong Reader：纯前端阅读端，产物 zip（本地打开 / 静态托管均可）
-  reader:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Build frontend
-        run: cd frontend && npm ci && npm run build
-
-      - name: Pack reader
-        run: |
-          cd frontend/dist
-          zip -r "../../readalong-reader.zip" reader.html assets
-
-      # Release 是 studio job（或 android.yml）建的，而本 job 通常先跑完，
-      # 所以不能直接 upload —— 找不到 Release 会直接失败（v0.1.5~v0.1.8 一直是这个原因）。
-      # 和 studio job 一样：先确保 Release 存在，再上传。
-      - name: Upload to Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 \
-            || gh release create "$GITHUB_REF_NAME" --generate-notes \
-            || true
-          gh release upload "$GITHUB_REF_NAME" readalong-reader.zip --clobber
+  # 注：曾经有一个 reader job，把 frontend/dist 打成 readalong-reader.zip 挂到 Release。
+  # Reader 前端已经随 APK（android.yml，Capacitor 壳）一起发布，桌面用户也不需要它，
+  # 所以不再上传。真要临时拿到它，本地 `cd frontend && npm run build` 后自己打 zip 即可。

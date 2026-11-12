@@ -345,19 +345,21 @@ git tag v2.0.1 && git push origin v2.0.1
 
 - `release.yml`：ubuntu-latest → setup-go 1.25 → setup-node 22 → `go install wails@v2.13.0`
   → 从 tag 写 `wails.json` 的 `productVersion` → `wails build -clean -platform windows/amd64`
-  → 确保 Release 存在再上传 exe；另一个 job 打 Reader 前端并上传 zip
+  → 确保 Release 存在再上传 exe
 - `android.yml`：`npm run build:mobile` → `npx cap sync android` → gradle 出 APK（见 §9）
 
-一个 tag 的 Release 最终有三个资产（三个 job 并行上传，Release 记录会先出现、资产后到，
+一个 tag 的 Release 有两个资产（两个 job 并行上传，Release 记录会先出现、资产后到，
 别在开头几分钟里判断“产物没了”）：
 
 | 资产 | 内容 |
 | --- | --- |
 | `readalong.exe` | 桌面 Studio（课程生成 + 练习），约 12MB |
-| `readalong-reader.zip` | Reader 前端（`reader.html` + `assets`），约 30KB，解压后浏览器直接打开 |
 | `ReadAlong-<sha>.apk` | 手机版（Capacitor 壳 + Reader 前端），见 §9 |
 
-`latest` 是 `android.yml` 在 push main 时滚动的**预发布** Release，按设计只挂 APK，不带 exe/zip。
+> 曾经还有一个 `readalong-reader.zip`（`frontend/dist` 打的纯前端包）。Reader 已经随 APK 发布、
+> 桌面用户用不到，v2.0.2 起不再上传；需要时本地 `cd frontend && npm run build` 自己打包即可。
+
+`latest` 是 `android.yml` 在 push main 时滚动的**预发布** Release，按设计只挂 APK，不带 exe。
 
 仓库 Secret：`ANDROID_KEYSTORE_B64`、`ANDROID_KEYSTORE_PW`（缺任意一个就退化成 debug 包并在
 日志里告警，工作流不会红）。
