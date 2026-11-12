@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"readalong/config"
 	"readalong/model"
@@ -390,12 +391,37 @@ func GroupPages(pages []PageInfo) []Group {
 	return out
 }
 
+// titleSep 是「课程标题 · 系列名」里的分隔符，注意它是 2 字节的 UTF-8 字符。
+const titleSep = "·"
+
 // SeriesOf 从 CleanTitle 结果里取中点后面的系列名（书名）。
+// 「·」后面的内容不一定是系列名：带「· 单词朗读」「· 6」这种尾巴的分 P 标题也很常见，
+// 所以纯数字、纯符号、只有一个字的都当噪声丢掉，宁可返回空让上层兜底。
 func SeriesOf(cleaned string) string {
-	if i := strings.LastIndex(cleaned, "·"); i >= 0 {
-		return strings.TrimSpace(cleaned[i+1:])
+	i := strings.LastIndex(cleaned, titleSep)
+	if i < 0 {
+		return ""
 	}
-	return ""
+	// 「·」是 2 字节的 UTF-8 字符，切的时候必须按长度跳，
+	// 只 +1 会把第二字节（0xB7）留在书名开头，写进 JSON 就是一个乱码字符
+	s := strings.TrimSpace(cleaned[i+len(titleSep):])
+	r := []rune(s)
+	if len(r) < 2 {
+		return ""
+	}
+	letters, digits := 0, 0
+	for _, c := range r {
+		switch {
+		case unicode.IsDigit(c):
+			digits++
+		case unicode.IsLetter(c):
+			letters++
+		}
+	}
+	if letters == 0 || digits == len(r) {
+		return "" // 纯数字 / 纯数字加空格之类，当不了书名
+	}
+	return s
 }
 
 // subProgress 给单个分 P 的进度映射一层前缀和区间。

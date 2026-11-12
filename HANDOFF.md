@@ -428,6 +428,20 @@ whisper.cpp 不认，只认 `models\ggml-<name>.bin`。所以首次运行会重�
 模型 465MB + 工具 60MB，国内即便走镜像也要几分钟。UI 有进度条，但第一次体验仍然重。
 如果要优化：把 `ggml-base.en.bin`（142MB）作为首次默认，质量降一档但下载快 3 倍。
 
+### 8.6 书名解析（**已修**，出过「书名变成 6」这种怪事）
+
+书名 = `SeriesOf(CleanTitle(分P标题))`，也就是「`·` 后面那段」。三个坑：
+
+- `cleaned[i+1:]` 切「`·`」——它是 **2 字节** UTF-8，切完留下 0xB7，书名写进 JSON 会变成乱码字符。
+  现在统一按 `len(titleSep)` 跳（`store/zip.go` 里同样的 bug 也一起修了）
+- 分 P 标题前面带节号时（`6 p22 单词跟读`），`CleanTitle` 会把「6」当系列名塞到中点后面，
+  书名就成了「6」。`SeriesOf` 现在丢弃纯数字 / 纯符号 / 只有一个字的结果，让上层兜底
+- `runBatch` 里 `BookTitle = SeriesOf(...)` 没有兜底，某本书只有这类课程时会退化成裸 `BV` 号
+
+另外 `migrateWordTimeline`（§5.3）早期版本会拿 `data.json` 还原 `Course` 后 `SaveMeta`，
+把只存在于 `meta.json` 的 `bookTitle` 覆盖成空（真实数据里 `BV1qR4fesEm6_u3` 就这样丢过书名）。
+现在 `store.summaryOf` 在新值为空时保留卡片上的旧值。
+
 ---
 
 ## 9. APK 是怎么来的（Capacitor 壳，重要，别重复讨论）

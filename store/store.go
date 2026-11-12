@@ -3,6 +3,7 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -133,18 +134,7 @@ func Save(c model.Course, wavPath string) error {
 	if err := writeJSON(filepath.Join(dir, "data.json"), c); err != nil {
 		return err
 	}
-	meta := model.CourseSummary{
-		ID:        c.ID,
-		Title:     c.Title,
-		Source:    c.Source,
-		Uploader:  c.Uploader,
-		Duration:  c.Duration,
-		Count:     len(c.Segments),
-		Created:   c.Created,
-		BookID:    c.BookID,
-		BookTitle: c.BookTitle,
-	}
-	return writeJSON(filepath.Join(dir, "meta.json"), meta)
+	return writeJSON(filepath.Join(dir, "meta.json"), summaryOf(c))
 }
 
 // SaveData 只重写课程的数据文件（不动音频），用于视频课补下载等增量更新。
@@ -162,7 +152,28 @@ func SaveMeta(c model.Course) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return writeJSON(filepath.Join(dir, "meta.json"), model.CourseSummary{
+	return writeJSON(filepath.Join(dir, "meta.json"), summaryOf(c))
+}
+
+// LoadSummary 读一门课的课程库卡片信息（meta.json）。
+func LoadSummary(id string) (model.CourseSummary, error) {
+	var m model.CourseSummary
+	if !ValidID(id) {
+		return m, fmt.Errorf("课程 id 不合法")
+	}
+	raw, err := os.ReadFile(filepath.Join(config.CoursesDir, id, "meta.json"))
+	if err != nil {
+		return m, err
+	}
+	err = json.Unmarshal(raw, &m)
+	return m, err
+}
+
+// summaryOf 由课程数据生成卡片信息。
+// bookId / bookTitle 可能只存在于 meta.json（老课程、单 P 生成路径没写进 data.json），
+// 这时不能拿空值把卡片上的书名/归属覆盖掉，否则整理过书名的书会突然变回裸 BV 号。
+func summaryOf(c model.Course) model.CourseSummary {
+	m := model.CourseSummary{
 		ID:        c.ID,
 		Title:     c.Title,
 		Source:    c.Source,
@@ -172,7 +183,19 @@ func SaveMeta(c model.Course) error {
 		Created:   c.Created,
 		BookID:    c.BookID,
 		BookTitle: c.BookTitle,
-	})
+	}
+	if m.BookID != "" && m.BookTitle != "" {
+		return m
+	}
+	if old, err := LoadSummary(c.ID); err == nil {
+		if m.BookID == "" {
+			m.BookID = old.BookID
+		}
+		if m.BookTitle == "" {
+			m.BookTitle = old.BookTitle
+		}
+	}
+	return m
 }
 
 // List 按创建时间倒序返回全部课程摘要。

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"readalong/config"
+	"readalong/model"
 )
 
 // 同一个分 P 只能有一个目录：生成过之后再提交同一个链接要覆盖那门课，
@@ -41,5 +42,32 @@ func TestCourseIDFromURLReusesExistingCourse(t *testing.T) {
 	got := CourseIDFromURL("https://www.bilibili.com/video/BV1qR4fesEm6/?p=24")
 	if got != "BV1qR4fesEm6_p24_2" {
 		t.Fatalf("半截目录应让位给 _2，实际 %q", got)
+	}
+}
+
+// 老课程的 data.json 里没有 bookId/bookTitle（只有 meta.json 有）。
+// 这种课程被重写（时间轴校正、补下载视频）时，不能把卡片上整理好的书名清空。
+func TestSaveMetaKeepsBookTitle(t *testing.T) {
+	old := config.CoursesDir
+	config.CoursesDir = t.TempDir()
+	defer func() { config.CoursesDir = old }()
+
+	const id = "BV1qR4fesEm6_u3"
+	withTitle := model.Course{ID: id, Title: "Unit 3", BookID: "BV1qR4fesEm6", BookTitle: "新交际英语-一年级上"}
+	if err := SaveMeta(withTitle); err != nil {
+		t.Fatal(err)
+	}
+
+	bare := model.Course{ID: id, Title: "Unit 3"} // 就像老 data.json 那样两字段都空
+	if err := SaveMeta(bare); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := LoadSummary(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.BookTitle != "新交际英语-一年级上" || m.BookID != "BV1qR4fesEm6" {
+		t.Fatalf("书名/归属被覆盖成空：%+v", m)
 	}
 }

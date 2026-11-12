@@ -63,6 +63,18 @@ func (a *App) migrateWordTimeline() {
 		}
 		wav := filepath.Join(config.CoursesDir, c.ID, "audio.wav")
 		clean := c
+		// 老课程的 data.json 里可能没有 bookId/bookTitle（只有 meta.json 有），
+		// 直接回写会把整理过的书名/归属抹掉，先补回来
+		if clean.BookTitle == "" || clean.BookID == "" {
+			if m, merr := store.LoadSummary(c.ID); merr == nil {
+				if clean.BookTitle == "" {
+					clean.BookTitle = m.BookTitle
+				}
+				if clean.BookID == "" {
+					clean.BookID = m.BookID
+				}
+			}
+		}
 		modelName := config.ModelName(c.Lang)
 		lang := c.Lang
 		if lang == "" {
@@ -444,8 +456,12 @@ func (a *App) runBatch(j *jobState, rawURL, lang string, pages []domain.PageInfo
 		res, err := domain.RunGrouped(rawURL, cid, lang, g.Label, g.Pages, op)
 		if err == nil {
 			res.Course.BookID = store.BaseBV(rawURL)
-			// 用本分组的第一页取系列名；pages[0] 是整本书第 1 个分 P（可能是被跳过的视频课）
+			// 用本分组的第一页取系列名；pages[0] 是整本书第 1 个分 P（可能是被跳过的视频课）。
+			// 取不到系列名时退回课程标题，别写空值（课程库里会退化成裸 BV 号）
 			res.Course.BookTitle = domain.SeriesOf(domain.CleanTitle(g.Pages[0].Title))
+			if res.Course.BookTitle == "" {
+				res.Course.BookTitle = res.Course.Title
+			}
 			// 教学视频课：下载成 mp4 放进课程目录（失败不影响课程，回退在线播放）
 			for _, v := range g.Videos {
 				ref := model.VideoRef{Title: v.Title, Page: v.Page}

@@ -53,7 +53,8 @@ func bookCourses(bookID string) ([]model.CourseSummary, string, error) {
 		if title == "" {
 			// 从课程标题的「·」后面兜底提取书名
 			if i := strings.LastIndex(m.Title, "·"); i >= 0 {
-				title = strings.TrimSpace(m.Title[i+1:])
+				// 「·」占 2 字节，别只 +1（会把 0xB7 留在书名开头）
+				title = strings.TrimSpace(m.Title[i+len("·"):])
 			}
 		}
 		out = append(out, m)
