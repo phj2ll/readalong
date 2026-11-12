@@ -529,7 +529,10 @@ select:focus {
 }
 
 /* ---------- 书（课程分组） ---------- */
+/* 一本书下面是整列的分 P 列表，所以它必须横跨 .courses 网格的所有列；
+   否则会被当成 290px 的卡片平铺，头部（封面 + 书名 + 5 个按钮）挤成一团。 */
 .card.book {
+  grid-column: 1 / -1;
   padding: 16px 18px;
   margin-bottom: 14px;
 }
@@ -538,6 +541,8 @@ select:focus {
   display: flex;
   align-items: center;
   gap: 12px;
+  /* 窄的时候让按钮整行下移，别去挤书名（否则标题会被压成一字一行） */
+  flex-wrap: wrap;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--line);
 }
@@ -565,12 +570,13 @@ select:focus {
 }
 
 .book-head .info {
-  flex: 1;
+  /* 至少给书名留出 180px，装不下就整体换行 */
+  flex: 1 1 180px;
   min-width: 0;
 }
 
 .book-head .acts {
-  flex: none;
+  flex: 0 1 auto;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -595,6 +601,7 @@ select:focus {
 .book-head .m {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
   font-size: 12px;
   color: var(--muted);
   margin-top: 3px;
