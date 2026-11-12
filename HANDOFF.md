@@ -341,11 +341,26 @@ WSL 里注意：
 git tag v2.0.1 && git push origin v2.0.1
 ```
 
-流程：`ubuntu-latest` → setup-go 1.25 → setup-node 22 → `go install wails@v2.13.0`
-→ 从 tag 写 `wails.json` 的 `productVersion` → `wails build -clean -platform windows/amd64`
-→ `gh release create <tag> build/bin/readalong.exe --generate-notes`
+流程：两个工作流并行，都由 tag 触发
 
-产物：`https://github.com/phj2ll/readalong/releases/download/<tag>/readalong.exe`（约 11MB）
+- `release.yml`：ubuntu-latest → setup-go 1.25 → setup-node 22 → `go install wails@v2.13.0`
+  → 从 tag 写 `wails.json` 的 `productVersion` → `wails build -clean -platform windows/amd64`
+  → 确保 Release 存在再上传 exe；另一个 job 打 Reader 前端并上传 zip
+- `android.yml`：`npm run build:mobile` → `npx cap sync android` → gradle 出 APK（见 §9）
+
+一个 tag 的 Release 最终有三个资产（三个 job 并行上传，Release 记录会先出现、资产后到，
+别在开头几分钟里判断“产物没了”）：
+
+| 资产 | 内容 |
+| --- | --- |
+| `readalong.exe` | 桌面 Studio（课程生成 + 练习），约 12MB |
+| `readalong-reader.zip` | Reader 前端（`reader.html` + `assets`），约 30KB，解压后浏览器直接打开 |
+| `ReadAlong-<sha>.apk` | 手机版（Capacitor 壳 + Reader 前端），见 §9 |
+
+`latest` 是 `android.yml` 在 push main 时滚动的**预发布** Release，按设计只挂 APK，不带 exe/zip。
+
+仓库 Secret：`ANDROID_KEYSTORE_B64`、`ANDROID_KEYSTORE_PW`（缺任意一个就退化成 debug 包并在
+日志里告警，工作流不会红）。
 
 ⚠️ **`go.sum` 必须提交**，否则 CI 报 `missing go.sum entry`。
 ⚠️ 在 Linux 上交叉编译 Windows 不需要 mingw，Wails v2 的 Windows 实现是纯 Go + syscall。
@@ -415,24 +430,22 @@ whisper.cpp 不认，只认 `models\ggml-<name>.bin`。所以首次运行会重�
 
 ---
 
-## 9. 为什么出不了 APK（重要，别重复讨论）
+## 9. APK 是怎么来的（Capacitor 壳，重要，别重复讨论）
 
-用户一开始希望同一个 GitHub Action 同时产出 exe 和 apk。**做不到**，原因是结构性的：
+「Wails 出不了 APK」这半句仍然成立：Wails 只有 Windows/macOS/Linux target，而桌面版的干活能力
+来自三个外部命令行程序（`yt-dlp`、`ffmpeg`、`whisper-cli`）+ 465MB 模型，Android 上跑不了。
 
-1. Wails 是桌面框架，只支持 Windows/macOS/Linux，没有 Android target
-2. 应用的干活能力来自三个**外部命令行程序**：`yt-dlp.exe`、`ffmpeg.exe`、`whisper-cli.exe`。
-   Android 上跑不了 Windows PE 可执行文件，也没有等价的"随手 download 一个 exe"的路径
-3. 语音模型 465MB + 识别要几 GB 内存，手机端体验很差
+所以 APK 走的是**只装 Reader 的壳**：
 
-要出 apk 只有三条路，都不属于"改配置"范畴：
+- `frontend` 用 `npm run build:mobile` 产出 `dist-mobile`（Reader 入口：纯前端 + JS 直连讯飞评分）
+- `mobile/` 是 Capacitor 工程：`appId = com.phj2ll.readalong`，`webDir = ../frontend/dist-mobile`
+- `.github/workflows/android.yml`：`npx cap sync android` → `gradlew assembleRelease` 出 APK
+- 课程靠桌面版「导出整本书」的 zip 导入，手机端不解析链接、不做 ASR、不生成课程
 
-| 方案 | 工作量 | 说明 |
-| --- | --- | --- |
-| Flutter 重写原生 | 大，等于重做一个项目 | ASR 需换方案（端上 whisper.cpp JNI 或云端接口），视频解析要自己实现 B 站 API |
-| 服务端生成 + 手机网页 | 中 | 流水线挪到服务器，手机端只做播放器。手机零安装，但需要一台常开机器 |
-| WebView 套壳 apk | 小 | 本质还是服务端方案，apk 只是壳，满足"有安装包"的心理需求 |
-
-用户已决定 **先做 PC 端，暂不做手机端**。恢复这个需求前先确认上面三条走哪条。
+手机端能做：听原音、跟读、录音回放、讯飞评分；不能做：贴 B 站链接、切句、生成课程。
+签名：vivo 等 ROM 拒装 debug 证书的包，所以必须走 release 签名；keystore 与密码都在仓库 Secret
+（`ANDROID_KEYSTORE_B64` / `ANDROID_KEYSTORE_PW`），本地 `mobile/keystore/readalong.jks` 不入库
+（`.gitignore` 已挡）。**不要再把密码写进 workflow 或任何提交里。**
 
 ---
 

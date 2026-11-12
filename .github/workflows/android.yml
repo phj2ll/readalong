@@ -73,15 +73,18 @@ jobs:
       # 出包：优先用正式证书签名的 release 包。
       # debug 包用的是 Android 调试证书，vivo 等 ROM 会以
       # 「安装包缺乏开发者证书」拒绝安装，所以必须走 release 签名。
-      # 密钥库放在仓库 Secret（ANDROID_KEYSTORE_B64）里，不入库。
+      # 密钥库和密码都放仓库 Secret，不入库也不写在 workflow 里：
+      #   ANDROID_KEYSTORE_B64   keystore 的 base64
+      #   ANDROID_KEYSTORE_PW    keystore 与 key 的密码（两者目前相同）
+      # 缺任意一个就退化到 debug 包并在日志里告警，主分支不会因此变红。
       - name: Build APK
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
-          KEYSTORE_PW: ReadAlong2026Sign
+          KEYSTORE_PW: ${{ secrets.ANDROID_KEYSTORE_PW }}
         run: |
           cd mobile/android
           chmod +x gradlew
-          if [ -n "$KEYSTORE_B64" ]; then
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$KEYSTORE_PW" ]; then
             echo "使用正式证书签名（release）"
             mkdir -p "$RUNNER_TEMP"
             echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/readalong.jks"
@@ -94,7 +97,7 @@ jobs:
               -PkeyPassword="$KEYSTORE_PW"
             echo "APK_PATH=mobile/android/app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_ENV"
           else
-            echo "::warning::未配置 ANDROID_KEYSTORE_B64，构建的是 debug 包（vivo 等 ROM 会拒装）"
+            echo "::warning::未配置 ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PW，构建的是 debug 包（vivo 等 ROM 会拒装）"
             ./gradlew assembleDebug --no-daemon \
               -PversionCode=${{ github.run_number }} \
               -PversionName="0.1.${{ github.run_number }}"
