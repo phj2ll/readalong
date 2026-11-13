@@ -1177,3 +1177,94 @@ body.video-open {
   color: #fff;
 }
 
+/* ---------- 任务进度条 / 单词卡补充信息 / 评分反馈 ---------- */
+
+/* 任务行底部细进度条（已练 / 总题数），没练过的任务不渲染 */
+.task-bar {
+  display: block;
+  height: 4px;
+  margin-top: 7px;
+  border-radius: 99px;
+  background: #efedf7;
+  overflow: hidden;
+}
+
+.task-bar > b {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #8a7bf5, #6a58e6);
+  transition: width 0.3s ease;
+}
+
+/* 单词卡的音标 + 中文释义 */
+.focus-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.focus-meta .ipa {
+  font-size: 14px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.focus-meta .cn {
+  font-size: 15px;
+  font-weight: 600;
+  color: #5a5780;
+}
+
+/* 星级评分 + 鼓励语 */
+.focus-stars {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+
+.focus-stars .star {
+  width: 18px;
+  height: 18px;
+  color: #e4e2ef;
+}
+
+.focus-stars .star.on {
+  color: #ffc53d;
+}
+
+.focus-stars .star svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.focus-praise {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* 这一句里读得不太准的词 */
+.bad-words {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.bad-words b {
+  color: #e05a5a;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+/* 正文里读错的词：红色波浪线（不改字重，避免行高跳动） */
+.w-bad {
+  font-style: normal;
+  color: #e05a5a;
+  text-decoration: underline wavy #f0a8a8 2px;
+  text-underline-offset: 5px;
+}
+

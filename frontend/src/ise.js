@@ -221,7 +221,35 @@ export async function assessPCM(pcm, text, lang, settings) {
     accuracy: normScore(accuracy),
     fluency: normScore(fluency),
     integrity: normScore(pickScore(xml, 'integrity_score')),
+    words: parseWords(xml),
   };
+}
+
+// 句子里每个词的分数：read_sentence 的 XML 会带
+//   <word content="hello" total_score="4.2" dp_message="0" ...>
+// dp_message 非 "0" 表示漏读 / 错读 / 多读；单词题（read_word）没有这层，返回空数组。
+// 前端用它在句子上把读错的词标出来，比只给一个总分有用得多。
+function parseWords(xml) {
+  const out = [];
+  if (!/<word[\s>]/.test(xml)) return out;
+  let doc = null;
+  try {
+    doc = new DOMParser().parseFromString(xml, 'text/xml');
+  } catch (e) {
+    return out;
+  }
+  if (!doc || doc.getElementsByTagName('parsererror').length) return out;
+  const nodes = doc.getElementsByTagName('word');
+  for (const w of nodes) {
+    const text = w.getAttribute('content') || '';
+    if (!text.trim()) continue;
+    out.push({
+      text,
+      score: normScore(parseFloat(w.getAttribute('total_score') || '0')),
+      dp: w.getAttribute('dp_message') || '0',
+    });
+  }
+  return out;
 }
 
 // assessWeb 评分：text 参考文本，lang 'en'|'zh'，audioBytes 录音原始字节（webm 等）

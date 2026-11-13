@@ -452,7 +452,7 @@ body.mobile .score-num.great {
 body.mobile .score-num.good {
   color: #e8a13c;
 }
-body.mobile .score-num.weak {
+body.mobile .score-num.low {
   color: #e05a5a;
 }
 
@@ -595,4 +595,55 @@ body.mobile .focus-swipe-tip {
   text-align: center;
   font-size: 11px;
   color: #c9c6da;
+}
+
+/* ---------- 单词卡：音标 / 中文 / 星星 / 错词 ---------- */
+body.mobile .focus-meta {
+  margin-top: 12px;
+  gap: 3px;
+}
+
+body.mobile .focus-meta .ipa {
+  font-size: 15px;
+  color: #9b99b0;
+}
+
+body.mobile .focus-meta .cn {
+  font-size: 17px;
+  color: #4b4770;
+}
+
+body.mobile .focus-stars {
+  gap: 5px;
+  margin-bottom: 4px;
+}
+
+body.mobile .focus-stars .star {
+  width: 21px;
+  height: 21px;
+}
+
+body.mobile .focus-praise {
+  font-size: 13px;
+  margin-top: 2px;
+  color: #6a58e6;
+}
+
+body.mobile .bad-words {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: #a09db5;
+}
+
+body.mobile .bad-words b {
+  color: #e05a5a;
+}
+
+body.mobile .w-bad {
+  text-underline-offset: 8px;
+}
+
+body.mobile .task-bar {
+  height: 5px;
+  margin-top: 8px;
 }

@@ -2,6 +2,7 @@ import { api, esc, fmtTime, isWails, toast } from '../api.js';
 import { recstore } from '../recstore.js';
 import { formatScore, scoreFor, scoreGrade } from '../score.js';
 import { BACK_SVG } from '../icons.js';
+import { lookupWord, normalizeWord } from '../words.js';
 
 const MODES = [
   { key: 'loop', label: '单句循环' },
@@ -33,6 +34,7 @@ export function renderPlayer(root, courseId) {
     iseReady: false,
     filter: null, // 任务视图筛选：null 看全部，或句号数组
     taskLabel: '', // 当前任务名（单词跟读 / 逐句跟读…），练习页标题用
+    taskCat: '', // 当前任务类型（单词 / 课文 / 歌谣 / 复习）：单词任务才显示音标和释义
     focusPos: 0, // 单词卡视图：当前词在任务里的位置
     recStart: 0, // 录音开始时间（圆环进度用）
     ringTimer: null,
@@ -459,6 +461,16 @@ export function renderPlayer(root, courseId) {
     return t.indexes.some((i) => state.done.has(i)) || scoreFor(state.scores, t.indexes).n > 0;
   }
 
+  // 任务行底部的细进度条：已练 / 总题数（课文朗读只连听，不显示）
+  function taskBarHtml(t) {
+    if (t.mode === 'auto') return '';
+    const total = t.indexes.length || 1;
+    const doneN = t.indexes.reduce((n, i) => n + (state.done.has(i) ? 1 : 0), 0);
+    if (!doneN) return '';
+    const pct = Math.min(100, Math.round((doneN / total) * 100));
+    return `<i class="task-bar"><b style="width:${pct}%"></b></i>`;
+  }
+
   function scoreChipText(i) {
     const s = state.scores[i];
     return s && s.total > 0 ? `${Math.round(s.total)}分` : '';
@@ -500,6 +512,7 @@ export function renderPlayer(root, courseId) {
         state.scores[i] = res;
         localStorage.setItem(keyScores, JSON.stringify(state.scores));
       }
+      playChime(res.total >= 82);
       toast(`第 ${i + 1} 句评分：${Math.round(res.total)} 分`);
     } catch (e) {
       const msg = String(e && e.message ? e.message : e);
@@ -819,6 +832,7 @@ export function renderPlayer(root, courseId) {
   function renderTasks() {
     state.filter = null;
     state.taskLabel = ''; // 回到任务列表 = 不在任何任务里，别再往续读游标里写
+    state.taskCat = '';
     taskPushed = false;
     partPushed = false;
     document.body.classList.remove('focus-mode');
@@ -856,6 +870,7 @@ export function renderPlayer(root, courseId) {
                 ? `<button class="task-reset" data-reset="${k}" title="清空这个任务的已练记录和续读位置（分数保留）">重置</button>`
                 : ''
             }</div>
+            ${taskBarHtml(t)}
           </div>
           <div class="task-score-box">${taskScoreBox(t)}</div>
         </div>`
@@ -889,6 +904,7 @@ export function renderPlayer(root, courseId) {
         const t = tasks[parseInt(el.dataset.task, 10)];
         state.filter = t.indexes;
         state.taskLabel = t.label;
+        state.taskCat = t.cat;
         // 任务也是一层页面：压一条历史，手机返回手势先回任务列表，
         // 而不是一下子跳回「本书的课」。
         taskPushed = false;
@@ -1026,16 +1042,103 @@ export function renderPlayer(root, courseId) {
   // 未配置评测凭据时给个明确指引（APK 里凭据由用户手动填一次）
   const idleHint = () => (state.iseReady ? '点话筒跟读' : '先在书架页「评测设置」填讯飞凭据');
 
+  // 星星用 SVG：字符 ★ 的字形跟着字体变，大小对不齐
+  const STAR_SVG =
+    '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.8l2.86 5.8 6.4.93-4.63 4.51 1.1 6.37L12 17.4l-5.73 3.01 1.1-6.37L2.74 9.53l6.4-.93z"/></svg>';
+
+  // 分数 → 1~5 颗星（孩子看星星比看数字直观）
+  function scoreStars(total) {
+    if (total >= 92) return 5;
+    if (total >= 82) return 4;
+    if (total >= 70) return 3;
+    if (total >= 58) return 2;
+    return 1;
+  }
+
+  function praiseText(total) {
+    const n = scoreStars(total);
+    if (n === 5) return '太棒了，读音很标准！';
+    if (n === 4) return '很不错，再稳一点就满星啦';
+    if (n === 3) return '读得不错，再跟一遍原声试试';
+    if (n === 2) return '有点难，先听两遍原声再读';
+    return '别着急，一句一句慢慢来';
+  }
+
+  // 出分音效：不用音频文件，两个振荡器现合成（好成绩上行三音，一般两音）
+  function playChime(good) {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      const ctx = new AC();
+      const notes = good ? [784, 988, 1319] : [523, 440];
+      let t = ctx.currentTime;
+      for (const f of notes) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = f;
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(0.09, t + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(t);
+        osc.stop(t + 0.3);
+        t += 0.12;
+      }
+      setTimeout(() => {
+        try {
+          ctx.close();
+        } catch (e) {
+          /* 忽略 */
+        }
+      }, 1200);
+    } catch (e) {
+      /* 没有音频环境就算了，不影响打分 */
+    }
+  }
+
+  // 评测结果里读错 / 漏读的词（dp_message 非 0，或分数低于 70）
+  function badWordsOf(s) {
+    if (!s || !s.words) return [];
+    return s.words.filter((w) => w.dp !== '0' || w.score < 70);
+  }
+
+  // 句子按词切开，读错的词包一层 <em class="w-bad">（只在不可编辑的手机卡上用）
+  function wordsHtml(text, s) {
+    const bad = badWordsOf(s);
+    if (!bad.length) return esc(text);
+    const map = new Map(bad.map((w) => [normalizeWord(w.text), w]));
+    return String(text)
+      .split(/(\s+)/)
+      .map((tok) => {
+        if (!/\S/.test(tok)) return tok;
+        const hit = map.get(normalizeWord(tok));
+        if (!hit) return esc(tok);
+        return `<em class="w-bad" title="这个词 ${Math.round(hit.score)} 分">${esc(tok)}</em>`;
+      })
+      .join('');
+  }
+
   function focusScoreHtml(i) {
     if (state.assessing.has(i)) return '<span class="score-wait">评分中…</span>';
     const s = state.scores[i];
-    if (s && s.total > 0) {
-      return (
-        `<span class="score-num ${scoreGrade(s.total)}">${Math.round(s.total)}<small>分</small></span>` +
-        `<span class="score-detail">准确 ${Math.round(s.accuracy || 0)} · 流利 ${Math.round(s.fluency || 0)}</span>`
-      );
-    }
-    return '';
+    if (!s || !(s.total > 0)) return '';
+    const n = scoreStars(s.total);
+    const stars = Array.from({ length: 5 }, (_, k) => `<i class="star${k < n ? ' on' : ''}">${STAR_SVG}</i>`).join('');
+    const bad = badWordsOf(s);
+    const badLine = bad.length
+      ? `<div class="bad-words">读得不太准：${bad
+          .slice(0, 6)
+          .map((w) => `<b>${esc(w.text)}</b>`)
+          .join('')}</div>`
+      : '';
+    return (
+      `<div class="focus-stars">${stars}</div>` +
+      `<span class="score-num ${scoreGrade(s.total)}">${Math.round(s.total)}<small>分</small></span>` +
+      `<span class="score-detail">准确 ${Math.round(s.accuracy || 0)} · 流利 ${Math.round(s.fluency || 0)}</span>` +
+      `<div class="focus-praise">${esc(praiseText(s.total))}</div>` +
+      badLine
+    );
   }
 
   function renderFocus(autoplay) {
@@ -1046,6 +1149,11 @@ export function renderPlayer(root, courseId) {
     const i = idxs[pos];
     const seg = state.data.segments[i];
     const text = state.edits[i] ?? seg.text;
+    // 单词任务：查内置词表补音标 + 中文（课程数据里没有这两项）
+    const dict = state.taskCat === '单词' ? lookupWord(text) : null;
+    const wordMeta = dict
+      ? `<div class="focus-meta"><span class="ipa">${esc(dict.ipa)}</span><span class="cn">${esc(dict.cn)}</span></div>`
+      : '';
 
     // 练习页用紧凑头部：只留任务名 + 已练，别让紫色大块占屏幕
     document.body.classList.add('focus-mode');
@@ -1055,7 +1163,10 @@ export function renderPlayer(root, courseId) {
       <div class="focus" data-i="${i}">
         <div class="focus-card">
           <span class="ai-tag">${esc(state.taskLabel || '跟读')}</span>
-          <div class="focus-text" contenteditable="${isMobileView() ? 'false' : 'true'}" spellcheck="false">${esc(text)}</div>
+          <div class="focus-text" contenteditable="${isMobileView() ? 'false' : 'true'}" spellcheck="false">${
+            isMobileView() ? wordsHtml(text, state.scores[i]) : esc(text)
+          }</div>
+          ${wordMeta}
           <div class="focus-score" id="focusScore">${focusScoreHtml(i)}</div>
         </div>
         <div class="focus-btns">
@@ -1180,6 +1291,12 @@ export function renderPlayer(root, courseId) {
     const el = document.getElementById('focusScore');
     if (!el || pos !== state.focusPos) return;
     el.innerHTML = focusScoreHtml(i);
+    // 手机端正文不可编辑，直接把读错的词标出来（PC 端要让用户编辑，不动正文）
+    const tEl = listEl.querySelector('.focus-text');
+    if (tEl && isMobileView()) {
+      const segText = state.edits[i] ?? state.data.segments[i].text;
+      tEl.innerHTML = wordsHtml(segText, state.scores[i]);
+    }
     const s = state.scores[i];
     if (s && s.total > 0) {
       clearTimeout(state.autoNextTimer);
