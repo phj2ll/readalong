@@ -609,6 +609,9 @@ export function renderPlayer(root, courseId) {
   let videoUrl = ''; // 当前 blob URL，关闭时必须 revoke
   let videoSeq = 0; // 加载序号：关闭后异步返回的结果要丢弃
   let videoPushed = false; // 是否为本层压了一条历史（Android 返回键关闭用）
+  let suppressPop = 0; // 自己调用 history.back() 的次数：别把这次 popstate 当成用户返回
+  let taskPushed = false; // 进任务时压的「任务层」历史条目是否还在
+  let partPushed = false; // 课文朗读进分部时压的历史条目是否还在
 
   function ensureVideoEl() {
     if (videoEl) return videoEl;
@@ -648,20 +651,41 @@ export function renderPlayer(root, courseId) {
     const pushed = videoPushed;
     videoPushed = false;
     if (goBack && pushed) {
+      suppressPop++;
       try {
         history.back();
       } catch (e) {
-        /* 忽略 */
+        suppressPop--;
       }
     }
   }
 
-  // Android 硬件返回键 / 浏览器后退：只关掉视频层，不退出课程
-  function onVideoPop() {
-    if (!videoPushed) return;
-    closeVideo(false);
+  // 系统返回（Android 手势 / 返回键、浏览器后退）统一在这里处理，按层级退：
+  // 视频全屏层 → 任务内的练习 → 任务列表 → 真的离开课程
+  function onPop() {
+    if (suppressPop > 0) {
+      suppressPop--;
+      return;
+    }
+    if (videoPushed) {
+      closeVideo(false);
+      return;
+    }
+    // 课文朗读：先退回到分部分目录
+    if (state.readPart && partPushed) {
+      partPushed = false;
+      stopAudio();
+      state.readPart = null;
+      renderReading();
+      return;
+    }
+    if (state.filter) {
+      taskPushed = false;
+      stopAudio();
+      renderTasks();
+    }
   }
-  window.addEventListener('popstate', onVideoPop);
+  window.addEventListener('popstate', onPop);
 
   async function openVideoModal(v) {
     const el = ensureVideoEl();
@@ -795,6 +819,8 @@ export function renderPlayer(root, courseId) {
   function renderTasks() {
     state.filter = null;
     state.taskLabel = ''; // 回到任务列表 = 不在任何任务里，别再往续读游标里写
+    taskPushed = false;
+    partPushed = false;
     document.body.classList.remove('focus-mode');
     if (state.data) $('#title').textContent = state.data.title || '跟读练习';
     const tasks = buildTasks();
@@ -863,9 +889,19 @@ export function renderPlayer(root, courseId) {
         const t = tasks[parseInt(el.dataset.task, 10)];
         state.filter = t.indexes;
         state.taskLabel = t.label;
+        // 任务也是一层页面：压一条历史，手机返回手势先回任务列表，
+        // 而不是一下子跳回「本书的课」。
+        taskPushed = false;
+        try {
+          history.pushState({ raTask: 1 }, '', location.href);
+          taskPushed = true;
+        } catch (err) {
+          /* 极端环境不让 pushState：退回「直接渲染任务列表」的老路子 */
+        }
         const { pos, resumed } = resumePosFor(t);
         state.focusPos = pos;
         state.readPart = null;
+        partPushed = false;
         setMode(t.mode);
         renderSegments();
         if (resumed) {
@@ -1210,6 +1246,14 @@ export function renderPlayer(root, courseId) {
       listEl.querySelectorAll('[data-part]').forEach((el) => {
         el.onclick = () => {
           state.readPart = subs[parseInt(el.dataset.part, 10)].section;
+          // 分部也算一层：手机返回手势先回目录，而不是直接回任务列表
+          partPushed = false;
+          try {
+            history.pushState({ raPart: 1 }, '', location.href);
+            partPushed = true;
+          } catch (e) {
+            /* 忽略 */
+          }
           renderReading();
         };
       });
@@ -1358,12 +1402,41 @@ export function renderPlayer(root, courseId) {
     })
     .catch(() => {});
 
-  // 返回按钮：在任务里先回任务列表，在任务列表才是离开课程
+  // 返回按钮：在任务里先回任务列表，在任务列表才是离开课程。
+  // 任务层是一条压进去的历史，所以这里也走 history.back()，
+  // 和手机手势返回走同一条路径，不会出现「按钮和手势行为不一致」
   $('.back').addEventListener('click', (e) => {
+    // 课文朗读的分部：先回目录
+    if (state.readPart) {
+      e.preventDefault();
+      stopAudio();
+      if (partPushed) {
+        partPushed = false;
+        history.back();
+      } else {
+        state.readPart = null;
+        renderReading();
+      }
+      return;
+    }
     if (state.filter) {
       e.preventDefault();
       stopAudio();
-      renderTasks();
+      if (taskPushed) {
+        taskPushed = false;
+        history.back();
+      } else {
+        renderTasks();
+      }
+      return;
+    }
+    // 不在任务里 = 离开课程。Reader 用历史回退而不是链接跳转：
+    // 链接会再压一条历史，系统返回时会把刚退掉的课程又翻出来。
+    // 桌面版（Wails）没有「App 内上一页」这回事，仍走 <a href>。
+    if (!isWails && history.length > 1) {
+      e.preventDefault();
+      stopAudio();
+      history.back();
     }
   });
 
@@ -1395,7 +1468,7 @@ export function renderPlayer(root, courseId) {
   return () => {
     document.body.classList.remove('focus-mode');
     window.removeEventListener('keydown', onKey);
-    window.removeEventListener('popstate', onVideoPop);
+    window.removeEventListener('popstate', onPop);
     closeVideo(false);
     if (videoEl) {
       videoEl.remove();

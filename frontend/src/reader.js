@@ -356,6 +356,16 @@ function renderBook(bookID) {
   `;
   const $ = (s) => root.querySelector(s);
   $('#iseSet').onclick = openSettingsModal;
+  // 返回书架：优先历史回退，避免返回按钮不断往历史里堆条目（系统返回会翻出旧页）
+  const backEl = $('.back');
+  if (backEl) {
+    backEl.addEventListener('click', (e) => {
+      if (history.length > 1) {
+        e.preventDefault();
+        history.back();
+      }
+    });
+  }
 
   allCourses()
     .then((courses) => {
