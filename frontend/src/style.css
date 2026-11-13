@@ -744,30 +744,15 @@ select:focus {
   color: #c3c2bb;
 }
 
-.task-score.great,
-.score-num-inline.great {
+.task-score.great {
   color: var(--ok);
 }
 
-.task-score.good,
-.score-num-inline.good {
+.task-score.good {
   color: var(--accent);
 }
 
-.task-score.low,
-.score-num-inline.low {
-  color: var(--muted);
-}
-
-/* 书架 Unit 行里的分数（小一号） */
-.score-num-inline {
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-}
-
-.score-max {
-  font-style: normal;
-  font-size: 11px;
+.task-score.low {
   color: var(--muted);
 }
 
