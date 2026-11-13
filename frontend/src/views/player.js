@@ -433,15 +433,18 @@ export function renderPlayer(root, courseId) {
     );
   }
 
-  // 任务副标题：共几题 · 已练几题 · 已评几题（参照外研U学的「共3道题」）
-  // 「已练」不依赖评分，评分没回来也能看到读了几个
+  // 任务副标题（仿外研U学）：
+  // 逐句跟读/单词/歌谣 按「句/个词」算——已经拆成一句一句，再报「几段」没用；
+  // 课文朗读 按「部分」算——点进去就是「课文1 / 英文歌曲 / 课文2」的分部目录
   function taskSub(t) {
     if (t.sub) return t.sub;
+    if (t.mode === 'auto') {
+      return `共 ${Math.max(1, t.parts)} 部分`;
+    }
     const unit = t.cat === '单词' ? '个词' : '句';
     const s = scoreFor(state.scores, t.indexes);
     const doneN = t.indexes.reduce((n, i) => n + (state.done.has(i) ? 1 : 0), 0);
     let text = `共 ${t.indexes.length} ${unit}`;
-    if (t.parts > 1) text += ` · ${t.parts} 段`;
     if (doneN) text += ` · 已练 ${doneN}`;
     if (doneN || s.n) text += ` · 已评 ${s.n}`;
     return text;
@@ -790,7 +793,9 @@ export function renderPlayer(root, courseId) {
           <div class="task-info">
             <div class="task-name">${esc(t.label)}</div>
             <div class="task-sub">${esc(taskSub(t))}${
-              hasProgress(t) ? `<button class="task-reset" data-reset="${k}" title="清空这个任务的已练记录和续读位置（分数保留）">重置</button>` : ''
+              t.mode !== 'auto' && hasProgress(t)
+                ? `<button class="task-reset" data-reset="${k}" title="清空这个任务的已练记录和续读位置（分数保留）">重置</button>`
+                : ''
             }</div>
           </div>
           <div class="task-score-box">${taskScoreBox(t)}</div>
@@ -850,7 +855,10 @@ export function renderPlayer(root, courseId) {
         if (!confirm(`清空「${t.label}」的练习进度？\n已记录的分数会保留。`)) return;
         for (const i of t.indexes) state.done.delete(i);
         saveDone();
-        delete state.pos[t.label];
+        // 课文朗读和逐句跟读共用同一批句子，游标也是各记各的，一起清掉
+        for (const tt of tasks) {
+          if (tt.indexes === t.indexes) delete state.pos[tt.label];
+        }
         try {
           localStorage.setItem(keyPos, JSON.stringify(state.pos));
         } catch (err) {
