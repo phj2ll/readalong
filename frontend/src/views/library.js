@@ -1,5 +1,6 @@
 import { api, esc, fmtTime, toast } from '../api.js';
 import { clearPractice } from '../recstore.js';
+import { readCourseScores, scoreGrade, summarizeScores } from '../score.js';
 
 // 评测设置弹窗（桌面版和 Reader 共用）
 export function openSettingsModal() {
@@ -237,27 +238,36 @@ export function renderLibrary(root) {
     }
     const books = [];
     const byBook = {};
+    // 每门课的评分统计（读 localStorage 里记录的历史最好成绩），Unit 行和书名行都要用
+    const scoreOf = new Map();
     for (const c of list) {
       const b = bookOf(c);
+      const sc = summarizeScores(readCourseScores(c.id));
+      scoreOf.set(c.id, sc);
       if (!byBook[b.bid]) {
-        byBook[b.bid] = { ...b, courses: [], sentences: 0, latest: c.created || '' };
+        byBook[b.bid] = { ...b, courses: [], sentences: 0, latest: c.created || '', scoreSum: 0, scoreN: 0 };
         books.push(byBook[b.bid]);
       }
       byBook[b.bid].courses.push(c);
       byBook[b.bid].sentences += c.count || 0;
+      byBook[b.bid].scoreSum += sc.sum;
+      byBook[b.bid].scoreN += sc.n;
       if ((c.created || '') > byBook[b.bid].latest) byBook[b.bid].latest = c.created;
     }
 
     coursesEl.innerHTML = books
       .map((b) => {
         const cov = coverUrlOf(b.bid);
+        const bookAvg = b.scoreN ? Math.round(b.scoreSum / b.scoreN) : 0;
         return `
       <div class="card book">
         <div class="book-head">
           <div class="book-cover">${cov ? `<img src="${esc(cov)}" alt="" />` : '📘'}</div>
           <div class="info">
             <div class="t">${esc(bookTitleOf(b))}</div>
-            <div class="m"><span>${b.courses.length} 课</span><span>· ${b.sentences} 句</span><span>· ${esc(b.latest)}</span></div>
+            <div class="m"><span>${b.courses.length} 课</span><span>· ${b.sentences} 句</span>${
+              b.scoreN ? `<span>· 均分 <b class="score-num-inline ${scoreGrade(bookAvg)}">${bookAvg}</b></span>` : ''
+            }<span>· ${esc(b.latest)}</span></div>
           </div>
           <div class="acts">
             <button class="btn small" data-rename="${esc(b.bid)}">改书名</button>
@@ -269,15 +279,20 @@ export function renderLibrary(root) {
         </div>
         <div class="units">
           ${b.courses
-            .map(
-              (c) => `
+            .map((c) => {
+              // 这一课已评句子的均分（没评过就不显示，免得满屏「均分 0」）
+              const sc = scoreOf.get(c.id) || { avg: 0, n: 0, sum: 0 };
+              const scoreTag = sc.n
+                ? ` · 均分 <b class="score-num-inline ${scoreGrade(sc.avg)}" title="已评 ${sc.n}/${c.count} 句，取历史最好成绩">${sc.avg}</b>`
+                : '';
+              return `
           <div class="unit">
             <span class="unit-label">${esc(bookOf(c).label)}</span>
-            <span class="unit-meta">${c.count} 句</span>
+            <span class="unit-meta">${c.count} 句${scoreTag}</span>
             <button class="btn small primary" data-open="${esc(c.id)}">打开</button>
             <button class="btn small danger" data-del="${esc(c.id)}">删除</button>
-          </div>`
-            )
+          </div>`;
+            })
             .join('')}
         </div>
       </div>`;

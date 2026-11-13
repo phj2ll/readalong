@@ -1,5 +1,6 @@
 import { api, esc, fmtTime, isWails, toast } from '../api.js';
 import { recstore } from '../recstore.js';
+import { scoreGrade, summarizeIndexes } from '../score.js';
 
 const MODES = [
   { key: 'loop', label: '单句循环' },
@@ -386,11 +387,12 @@ export function renderPlayer(root, courseId) {
   }
 
   // ---------- 评分（讯飞 ISE） ----------
-  function scoreGrade(t) {
-    if (t >= 85) return 'great';
-    if (t >= 70) return 'good';
-    if (t > 0) return 'weak';
-    return '';
+  // 任务行上的均分：0 句评过就不显示，免得满屏「均分 0」
+  function taskScoreHtml(t) {
+    const s = summarizeIndexes(state.scores, t.indexes);
+    if (!s.n) return '';
+    const done = s.n >= t.indexes.length ? '全部完成' : `${s.n}/${t.indexes.length} 句`;
+    return `<span class="task-score ${scoreGrade(s.avg)}" title="已评 ${done}，取历史最好成绩">均分 ${s.avg}</span>`;
   }
 
   function scoreChipText(i) {
@@ -712,7 +714,7 @@ export function renderPlayer(root, courseId) {
         <div class="task-row" data-task="${k}">
           <span class="task-ico ${CAT_CLS[t.cat] || 'ico-text'}">${CAT_ICON[t.cat] || '📖'}</span>
           <div class="task-info">
-            <div class="task-name">${esc(t.label)}</div>
+            <div class="task-name">${esc(t.label)}${taskScoreHtml(t)}</div>
             <div class="task-sub">${esc(t.sub || `共 ${t.indexes.length} 句${t.parts > 1 ? ` · ${t.parts} 段` : ''}`)}</div>
           </div>
           <button class="btn small primary">开始</button>

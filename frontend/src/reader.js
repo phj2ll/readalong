@@ -8,6 +8,7 @@ import { unzipSync } from 'fflate';
 import { api, esc, fmtTime, toast } from './api.js';
 import { idb } from './idb.js';
 import { recstore } from './recstore.js';
+import { readCourseScores, scoreGrade, summarizeScores } from './score.js';
 import { renderPlayer } from './views/player.js';
 import { openSettingsModal } from './views/library.js';
 
@@ -293,11 +294,14 @@ function renderShelf() {
       for (const c of courses) {
         const b = bookOf(c);
         if (!byBook[b.bid]) {
-          byBook[b.bid] = { ...b, n: 0, sentences: 0 };
+          byBook[b.bid] = { ...b, n: 0, sentences: 0, scoreSum: 0, scoreN: 0 };
           books.push(byBook[b.bid]);
         }
+        const sc = summarizeScores(readCourseScores(c.id));
         byBook[b.bid].n++;
         byBook[b.bid].sentences += c.count || 0;
+        byBook[b.bid].scoreSum += sc.sum;
+        byBook[b.bid].scoreN += sc.n;
       }
       booksEl.innerHTML = books
         .map((b) => {
@@ -313,7 +317,13 @@ function renderShelf() {
           <span class="course-ico${cov ? ' has-cover' : ''}">${cov ? `<img src="${esc(cov)}" alt="" />` : '📚'}</span>
           <div class="course-info">
             <div class="course-name">${esc(title)}</div>
-            <div class="course-meta">${b.n} 课 · ${b.sentences} 句</div>
+            <div class="course-meta">${b.n} 课 · ${b.sentences} 句${
+              b.scoreN
+                ? ` · 均分 <b class="score-num-inline ${scoreGrade(Math.round(b.scoreSum / b.scoreN))}">${Math.round(
+                    b.scoreSum / b.scoreN
+                  )}</b>`
+                : ''
+            }</div>
           </div>
           <div class="course-acts">
             <button class="btn small primary" data-book="${esc(b.bid)}">打开</button>
@@ -392,7 +402,10 @@ function renderBook(bookID) {
           <span class="course-ico">📖</span>
           <div class="course-info">
             <div class="course-name">${esc(bookOf(c).label)}</div>
-            <div class="course-meta">${c.count} 句 · ${fmtTime(c.duration)}</div>
+            <div class="course-meta">${c.count} 句 · ${fmtTime(c.duration)}${(() => {
+              const sc = summarizeScores(readCourseScores(c.id));
+              return sc.n ? ` · 均分 <b class="score-num-inline ${scoreGrade(sc.avg)}">${sc.avg}</b>` : '';
+            })()}</div>
           </div>
           <div class="course-acts">
             <button class="btn small primary" data-open="${esc(c.id)}">开始</button>
