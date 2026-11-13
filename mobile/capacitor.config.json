@@ -1,6 +1,6 @@
 {
   "appId": "com.phj2ll.readalong",
-  "appName": "一起读",
+  "appName": "依宝阅读",
   "webDir": "../frontend/dist-mobile",
   "android": {
     "allowMixedContent": false

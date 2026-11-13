@@ -36,7 +36,7 @@ function loadLocalSettings() {
 }
 
 function notInReader(name) {
-  return Promise.reject(new Error(`「${name}」只在电脑版「一起读」里可用`));
+  return Promise.reject(new Error(`「${name}」只在电脑版「依宝阅读」里可用`));
 }
 
 const webApi = {

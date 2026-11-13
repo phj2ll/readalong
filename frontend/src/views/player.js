@@ -1377,7 +1377,7 @@ export function renderPlayer(root, courseId) {
         backEl.href = `#/book/${encodeURIComponent(data.bookId)}`;
       }
       $('#title').textContent = data.title || '跟读练习';
-      document.title = data.title || '一起读';
+      document.title = data.title || '依宝阅读';
       audio.src = data.audio || `/courses/${courseId}/audio.wav`;
       audio.playbackRate = state.rate;
       setMode('loop');

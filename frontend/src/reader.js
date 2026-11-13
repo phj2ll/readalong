@@ -236,7 +236,7 @@ async function allCourses() {
 function renderShelf() {
   root.innerHTML = `
     <div class="topbar">
-      <div class="brand"><span class="dot"></span>一起读</div>
+      <div class="brand"><span class="dot"></span>依宝阅读</div>
       <div class="spacer"></div>
       <button class="btn small" id="iseSet">评测设置</button>
       <button class="btn small primary" id="import">导入课程包</button>
@@ -246,7 +246,7 @@ function renderShelf() {
       <div class="section-title">我的书架</div>
       <div id="books" class="courses"></div>
       <p class="rec-hint" style="text-align:center">
-        课程包由电脑版「一起读」的「导出整本书」生成；导入后离线跟读，评分需联网。
+        课程包由电脑版「依宝阅读」的「导出整本书」生成；导入后离线跟读，评分需联网。
       </p>
     </div>
   `;
