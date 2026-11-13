@@ -73,7 +73,7 @@ export function renderLibrary(root) {
 
   root.innerHTML = `
     <div class="topbar">
-      <div class="brand"><span class="dot"></span>ReadAlong</div>
+      <div class="brand"><span class="dot"></span>一起读</div>
       <span class="chip" id="ver"></span>
       <div class="spacer"></div>
       <span class="chip" id="modelChip">语音模型检查中…</span>

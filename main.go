@@ -36,7 +36,7 @@ func main() {
 
 	app := NewApp()
 	err = wails.Run(&options.App{
-		Title:     "ReadAlong · 跟读课程生成器",
+		Title:     "一起读 · 跟读课程生成器",
 		Width:     1180,
 		Height:    860,
 		MinWidth:  960,

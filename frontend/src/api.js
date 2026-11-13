@@ -36,7 +36,7 @@ function loadLocalSettings() {
 }
 
 function notInReader(name) {
-  return Promise.reject(new Error(`「${name}」只在桌面版可用，请使用 ReadAlong Studio`));
+  return Promise.reject(new Error(`「${name}」只在电脑版「一起读」里可用`));
 }
 
 const webApi = {
@@ -69,7 +69,14 @@ const webApi = {
         url = URL.createObjectURL(c.audioBlob);
         audioUrls.set(id, url);
       }
-      return { ...data, audio: url };
+      // bookId/bookTitle 可能在 data.json 里（新包），也可能只在 idb 记录上（老包），
+      // 播放页靠它把「返回」指回「本书的课」
+      return {
+        ...data,
+        bookId: data.bookId || c.bookId || '',
+        bookTitle: data.bookTitle || c.bookTitle || '',
+        audio: url,
+      };
     }),
   create: () => notInReader('课程生成'),
   job: () => Promise.resolve({ status: 'done' }),

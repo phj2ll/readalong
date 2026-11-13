@@ -1,6 +1,6 @@
 {
   "appId": "com.phj2ll.readalong",
-  "appName": "ReadAlong",
+  "appName": "一起读",
   "webDir": "../frontend/dist-mobile",
   "android": {
     "allowMixedContent": false

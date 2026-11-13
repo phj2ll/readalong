@@ -8,6 +8,7 @@ import { unzipSync } from 'fflate';
 import { api, esc, fmtTime, toast } from './api.js';
 import { idb } from './idb.js';
 import { recstore } from './recstore.js';
+import { BACK_SVG } from './icons.js';
 import { renderPlayer } from './views/player.js';
 import { openSettingsModal } from './views/library.js';
 
@@ -235,7 +236,7 @@ async function allCourses() {
 function renderShelf() {
   root.innerHTML = `
     <div class="topbar">
-      <div class="brand"><span class="dot"></span>ReadAlong <em>Reader</em></div>
+      <div class="brand"><span class="dot"></span>一起读</div>
       <div class="spacer"></div>
       <button class="btn small" id="iseSet">评测设置</button>
       <button class="btn small primary" id="import">导入课程包</button>
@@ -243,10 +244,9 @@ function renderShelf() {
     </div>
     <div class="wrap">
       <div class="section-title">我的书架</div>
-      <div class="ise-state" id="iseState"></div>
       <div id="books" class="courses"></div>
       <p class="rec-hint" style="text-align:center">
-        课程包由电脑版 ReadAlong Studio「导出整本书」生成；导入后离线跟读，评分需联网。
+        课程包由电脑版「一起读」的「导出整本书」生成；导入后离线跟读，评分需联网。
       </p>
     </div>
   `;
@@ -262,19 +262,6 @@ function renderShelf() {
     if (f) await importPackage(f);
   };
   $('#iseSet').onclick = openSettingsModal;
-
-  // 凭据状态一目了然（导入课程包时会自动带上）
-  api
-    .settings()
-    .then((s) => {
-      const ok = !!(s && s.appId && s.apiKey && s.apiSecret);
-      const el = $('#iseState');
-      el.textContent = ok
-        ? '✓ 评测凭据已配置（导入课程包时自动带上）'
-        : '! 评测凭据未配置：导入新版课程包会自动配置，或点右上角「评测设置」手填';
-      el.classList.toggle('bad', !ok);
-    })
-    .catch(() => {});
 
   // 书名/封面：导入课程包时存在 books 存储里（PC 端改过的书名和上传的封面）
   const coverUrls = [];
@@ -357,7 +344,7 @@ function renderShelf() {
 function renderBook(bookID) {
   root.innerHTML = `
     <div class="topbar">
-      <a class="back" href="#/">&lt;</a>
+      <a class="back" href="#/" title="返回书架">${BACK_SVG}</a>
       <div class="brand" id="bt">…</div>
       <div class="spacer"></div>
       <button class="btn small" id="iseSet">评测设置</button>

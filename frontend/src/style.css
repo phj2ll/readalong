@@ -382,19 +382,26 @@ select:focus {
   gap: 12px;
 }
 
+/* 返回按钮：书架内页、课程页共用这一个样式，箭头是 SVG（icons.js 的 BACK_SVG） */
 .back {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   flex: none;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: #fff;
-  color: var(--muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
+  padding: 0;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
   text-decoration: none;
+}
+
+.back svg {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 .back:hover {
@@ -672,6 +679,7 @@ select:focus {
   color: var(--accent);
 }
 
+/* 任务图标：彩色渐变圆角方块 + 内联白色 SVG（配色参照外研U学任务详情） */
 .task-ico {
   width: 42px;
   height: 42px;
@@ -679,29 +687,38 @@ select:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
-  font-size: 15px;
-  font-weight: 700;
+  border-radius: 13px;
+  box-shadow: 0 2px 6px rgba(21, 16, 61, 0.14);
+}
+
+.task-ico svg {
+  width: 24px;
+  height: 24px;
+  display: block;
 }
 
 .task-ico.ico-word {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: linear-gradient(150deg, #ffc75f, #ff8f2e);
 }
 
-.task-ico.ico-text {
-  background: var(--ok-soft);
-  color: var(--ok);
+.task-ico.ico-sentence {
+  background: linear-gradient(150deg, #6cb6ff, #4368f2);
+}
+
+.task-ico.ico-reading {
+  background: linear-gradient(150deg, #ffd965, #ffab1f);
 }
 
 .task-ico.ico-song {
-  background: #f3e8fa;
-  color: #7a3ba8;
+  background: linear-gradient(150deg, #ff9ed4, #f0619f);
 }
 
 .task-ico.ico-review {
-  background: #fdf4e7;
-  color: #8a5a12;
+  background: linear-gradient(150deg, #b7a4ff, #7b5bf0);
+}
+
+.task-ico.ico-video {
+  background: linear-gradient(150deg, #ff9a9a, #e0413f);
 }
 
 .task-info {
@@ -854,11 +871,6 @@ select:focus {
   border-radius: 10px;
 }
 
-.task-ico.ico-video {
-  background: #ffecec;
-  color: #d43a3a;
-}
-
 .video-divider {
   font-size: 12px;
   color: var(--muted);
@@ -893,6 +905,9 @@ body.video-open {
 
 #videoModal .video-back {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: 0;
   border-radius: 10px;
   /* 小朋友要一眼看到、好点：白底大字，触控热区 ≥ 44px */
@@ -904,6 +919,12 @@ body.video-open {
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
+}
+
+#videoModal .video-back svg {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 
 #videoModal .video-back:active {

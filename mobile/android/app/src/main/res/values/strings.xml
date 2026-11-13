@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">ReadAlong</string>
-    <string name="title_activity_main">ReadAlong</string>
+    <string name="app_name">一起读</string>
+    <string name="title_activity_main">一起读</string>
     <string name="package_name">com.phj2ll.readalong</string>
     <string name="custom_url_scheme">com.phj2ll.readalong</string>
 </resources>

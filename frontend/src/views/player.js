@@ -1,6 +1,7 @@
 import { api, esc, fmtTime, isWails, toast } from '../api.js';
 import { recstore } from '../recstore.js';
 import { formatScore, scoreFor, scoreGrade } from '../score.js';
+import { BACK_SVG } from '../icons.js';
 
 const MODES = [
   { key: 'loop', label: '单句循环' },
@@ -79,7 +80,7 @@ export function renderPlayer(root, courseId) {
   root.innerHTML = `
     <div class="player-head">
       <div class="row">
-        <a class="back" href="#/" title="返回课程库">‹</a>
+        <a class="back" href="#/" title="返回课程库">${BACK_SVG}</a>
         <h1 id="title">加载中…</h1>
         <span class="sub" id="count"></span>
       </div>
@@ -424,6 +425,9 @@ export function renderPlayer(root, courseId) {
   // 任务行右侧的分数：100 分制，分母是全部题目（没评过的按 0 分算），
   // 所以「10 个词读了 2 个」显示 20 分，一眼能看出完成度。
   function taskScoreBox(t) {
+    // 课文朗读只是连着听（不录音、不评分），右边只留箭头；
+    // 分数只属于要开口练的逐句跟读 / 单词跟读 / 歌谣跟读
+    if (t.mode === 'auto') return `<span class="task-go">›</span>`;
     const s = scoreFor(state.scores, t.indexes);
     const tip = `已评 ${s.n}/${s.total}${t.cat === '单词' ? ' 个词' : ' 句'}，每项取历史最好成绩`;
     return (
@@ -525,8 +529,29 @@ export function renderPlayer(root, courseId) {
 
   // 任务视图：仿外研U学「Unit 内先选任务类型」
   const CAT_LABEL = { 单词: '单词跟读', 课文: '逐句跟读', 歌谣: '歌谣跟读', 复习: '同步练习' };
-  const CAT_ICON = { 单词: '🔤', 课文: '🎧', 歌谣: '🎵', 复习: '✏️' };
-  const CAT_CLS = { 单词: 'ico-word', 课文: 'ico-text', 歌谣: 'ico-song', 复习: 'ico-review' };
+  const CAT_ICO = { 单词: 'word', 课文: 'sentence', 歌谣: 'song', 复习: 'review' };
+
+  // 任务图标：内联 SVG（彩色渐变小方块 + 白色图形，配色参照外研U学）
+  // 用 SVG 而不是 emoji：emoji 各系统字形不一，且没法统一成参考图那种质感
+  const TASK_SVG = {
+    // 单词跟读：Aa
+    word: '<svg viewBox="0 0 24 24" aria-hidden="true"><text x="12" y="16.4" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="12.6" font-weight="800" fill="#fff">Aa</text></svg>',
+    // 逐句跟读：耳机（听原声）
+    sentence:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4.4 14.2v-2.1a7.6 7.6 0 0115.2 0v2.1"/><rect x="2.6" y="13.2" width="4.1" height="6.2" rx="2" fill="#fff" stroke="none"/><rect x="17.3" y="13.2" width="4.1" height="6.2" rx="2" fill="#fff" stroke="none"/></svg>',
+    // 课文朗读：翻开的书
+    reading:
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6.6C10.1 5.2 7.7 4.7 4.6 4.9v12.9c3.1-.2 5.5.3 7.4 1.7 1.9-1.4 4.3-1.9 7.4-1.7V4.9c-3.1-.2-5.5.3-7.4 1.7z" fill="#fff"/><path d="M12 6.6v12.9" stroke="rgba(0,0,0,.14)" stroke-width="1.1"/></svg>',
+    // 歌谣跟读：音符
+    song:
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.8 16.8V6.9l7.6-1.7v9.6" fill="none" stroke="#fff" stroke-width="1.9" stroke-linejoin="round"/><circle cx="7.4" cy="17.3" r="2.5" fill="#fff"/><circle cx="15" cy="15.7" r="2.5" fill="#fff"/></svg>',
+    // 同步练习：对勾
+    review:
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.2 12.9l4.3 4.3L18.9 6.9" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    // 教学视频：播放
+    video:
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.6" fill="none" stroke="#fff" stroke-width="1.8"/><path d="M10.1 8.4l5.6 3.6-5.6 3.6z" fill="#fff"/></svg>',
+  };
 
   function buildTasks() {
     const secs = [];
@@ -560,9 +585,17 @@ export function renderPlayer(root, courseId) {
 
     const tasks = [];
     for (const g of groups) {
-      tasks.push({ label: CAT_LABEL[g.cat] || '逐句跟读', cat: g.cat, indexes: g.indexes, parts: g.parts, mode: 'loop' });
+      tasks.push({
+        label: CAT_LABEL[g.cat] || '逐句跟读',
+        cat: g.cat,
+        ico: CAT_ICO[g.cat] || 'sentence',
+        indexes: g.indexes,
+        parts: g.parts,
+        mode: 'loop',
+      });
       if (g.cat === '课文') {
-        tasks.push({ label: '课文朗读', cat: g.cat, indexes: g.indexes, parts: g.parts, mode: 'auto' });
+        // 课文朗读用单独的「书本」图标，和逐句跟读的耳机区分开
+        tasks.push({ label: '课文朗读', cat: g.cat, ico: 'reading', indexes: g.indexes, parts: g.parts, mode: 'auto' });
       }
     }
     return tasks;
@@ -583,7 +616,7 @@ export function renderPlayer(root, courseId) {
     videoEl.id = 'videoModal';
     videoEl.innerHTML = `
       <div class="video-bar">
-        <button class="video-back" data-videoclose>‹ 返回</button>
+        <button class="video-back" data-videoclose>${BACK_SVG}<span>返回</span></button>
         <span class="video-title" id="videoTitle"></span>
       </div>
       <div class="video-stage" id="videoBody"></div>`;
@@ -789,7 +822,7 @@ export function renderPlayer(root, courseId) {
           .map(
             (t, k) => `
         <div class="task-row" data-task="${k}">
-          <span class="task-ico ${CAT_CLS[t.cat] || 'ico-text'}">${CAT_ICON[t.cat] || '📖'}</span>
+          <span class="task-ico ico-${t.ico || 'sentence'}">${TASK_SVG[t.ico] || TASK_SVG.sentence}</span>
           <div class="task-info">
             <div class="task-name">${esc(t.label)}</div>
             <div class="task-sub">${esc(taskSub(t))}${
@@ -813,7 +846,7 @@ export function renderPlayer(root, courseId) {
                 .map(
                   (v, k) => `
         <div class="task-row" data-video="${k}">
-          <span class="task-ico ico-video">🎬</span>
+          <span class="task-ico ico-video">${TASK_SVG.video}</span>
           <div class="task-info">
             <div class="task-name">${esc(v.title)}</div>
             <div class="task-sub">${v.file ? '教学动画 · 已下载，离线可看' : '教学动画 · 未下载到本地'}</div>
@@ -1164,7 +1197,7 @@ export function renderPlayer(root, courseId) {
           const t1 = meta.end ?? e.end;
           return `
         <div class="task-row" data-part="${k}">
-          <span class="task-ico ico-text">📖</span>
+          <span class="task-ico ico-reading">${TASK_SVG.reading}</span>
           <div class="task-info">
             <div class="task-name">课文朗读 ${k + 1} · ${esc(name)}</div>
             <div class="task-sub">${g.indexes.length} 句 · ${fmtTime(t0)}-${fmtTime(t1)}</div>
@@ -1325,7 +1358,7 @@ export function renderPlayer(root, courseId) {
     })
     .catch(() => {});
 
-  // 返回按钮：在任务里先回任务列表，在任务列表才是回课程库
+  // 返回按钮：在任务里先回任务列表，在任务列表才是离开课程
   $('.back').addEventListener('click', (e) => {
     if (state.filter) {
       e.preventDefault();
@@ -1338,8 +1371,13 @@ export function renderPlayer(root, courseId) {
     .course(courseId)
     .then(async (data) => {
       state.data = data;
+      // Reader 是从「本书的课」进来的，返回要回那一页；PC Studio 只有课程库首页
+      const backEl = $('.back');
+      if (backEl && !isWails && data.bookId) {
+        backEl.href = `#/book/${encodeURIComponent(data.bookId)}`;
+      }
       $('#title').textContent = data.title || '跟读练习';
-      document.title = data.title || 'ReadAlong';
+      document.title = data.title || '一起读';
       audio.src = data.audio || `/courses/${courseId}/audio.wav`;
       audio.playbackRate = state.rate;
       setMode('loop');
