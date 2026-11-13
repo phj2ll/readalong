@@ -54,6 +54,7 @@ export function renderPlayer(root, courseId) {
   const keyDone = `ra.done.${courseId}`;
   const keyEdits = `ra.edits.${courseId}`;
   const keyScores = `ra.score.${courseId}`;
+  const keyPos = `ra.pos.${courseId}`;
   try {
     state.done = new Set(JSON.parse(localStorage.getItem(keyDone) || '[]'));
   } catch (e) {
@@ -68,6 +69,11 @@ export function renderPlayer(root, courseId) {
     state.scores = JSON.parse(localStorage.getItem(keyScores) || '{}');
   } catch (e) {
     state.scores = {};
+  }
+  try {
+    state.pos = JSON.parse(localStorage.getItem(keyPos) || '{}') || {};
+  } catch (e) {
+    state.pos = {};
   }
 
   root.innerHTML = `
@@ -130,6 +136,32 @@ export function renderPlayer(root, courseId) {
   }
   function saveEdits() {
     localStorage.setItem(keyEdits, JSON.stringify(state.edits));
+  }
+
+  // ---------- 断点续读 ----------
+  // state.pos 记「每个任务上次停在哪一句」（键是任务名，值是句子在整门课里的绝对序号）。
+  // 存绝对序号而不是列表下标：筛选条件变了、重跑切句了，也不会跳错位置。
+  function savePos(label, segIdx) {
+    if (!label || segIdx == null || segIdx < 0) return;
+    state.pos[label] = segIdx;
+    try {
+      localStorage.setItem(keyPos, JSON.stringify(state.pos));
+    } catch (e) {
+      /* 隐私模式写不了，忽略 */
+    }
+  }
+  // 进任务时的落点：优先回上次位置；那一题已经练过就顺势落到后面第一个没练的
+  function resumePosFor(t) {
+    const saved = state.pos[t.label];
+    if (saved == null) return { pos: 0, resumed: false };
+    const k = t.indexes.indexOf(saved);
+    if (k < 0) return { pos: 0, resumed: false };
+    if (state.done.has(t.indexes[k])) {
+      for (let j = k + 1; j < t.indexes.length; j++) {
+        if (!state.done.has(t.indexes[j])) return { pos: j, resumed: true };
+      }
+    }
+    return { pos: k, resumed: true };
   }
 
   function updateCount() {
@@ -208,6 +240,7 @@ export function renderPlayer(root, courseId) {
 
   function highlight(i) {
     state.current = i;
+    savePos(state.taskLabel, i); // 跟着听到哪记到哪（没进任务时 taskLabel 为空，不记）
     const cards = listEl.querySelectorAll('.seg, .rd');
     cards.forEach((el) => el.classList.toggle('active', parseInt(el.dataset.i, 10) === i));
     const el = Array.from(cards).find((el) => parseInt(el.dataset.i, 10) === i);
@@ -326,6 +359,7 @@ export function renderPlayer(root, courseId) {
       recstore.put(courseId, idx, blob).catch(() => toast('录音保存失败，本次仍可回放', true));
       state.done.add(idx);
       saveDone();
+      savePos(state.taskLabel, idx); // 记住练到哪，下次进来直接续读
       updateCount();
       markDone(idx);
       if (state.iseReady) assess(idx, blob);
@@ -399,15 +433,23 @@ export function renderPlayer(root, courseId) {
     );
   }
 
-  // 任务副标题：共几题 + 已评几题（参照外研U学的「共3道题」）
+  // 任务副标题：共几题 · 已练几题 · 已评几题（参照外研U学的「共3道题」）
+  // 「已练」不依赖评分，评分没回来也能看到读了几个
   function taskSub(t) {
     if (t.sub) return t.sub;
     const unit = t.cat === '单词' ? '个词' : '句';
     const s = scoreFor(state.scores, t.indexes);
+    const doneN = t.indexes.reduce((n, i) => n + (state.done.has(i) ? 1 : 0), 0);
     let text = `共 ${t.indexes.length} ${unit}`;
     if (t.parts > 1) text += ` · ${t.parts} 段`;
-    if (s.n) text += ` · 已评 ${s.n}`;
+    if (doneN) text += ` · 已练 ${doneN}`;
+    if (doneN || s.n) text += ` · 已评 ${s.n}`;
     return text;
+  }
+
+  // 有进度才显示「重置」，没练过的任务不啰嗦
+  function hasProgress(t) {
+    return t.indexes.some((i) => state.done.has(i)) || scoreFor(state.scores, t.indexes).n > 0;
   }
 
   function scoreChipText(i) {
@@ -716,6 +758,7 @@ export function renderPlayer(root, courseId) {
 
   function renderTasks() {
     state.filter = null;
+    state.taskLabel = ''; // 回到任务列表 = 不在任何任务里，别再往续读游标里写
     document.body.classList.remove('focus-mode');
     if (state.data) $('#title').textContent = state.data.title || '跟读练习';
     const tasks = buildTasks();
@@ -746,7 +789,9 @@ export function renderPlayer(root, courseId) {
           <span class="task-ico ${CAT_CLS[t.cat] || 'ico-text'}">${CAT_ICON[t.cat] || '📖'}</span>
           <div class="task-info">
             <div class="task-name">${esc(t.label)}</div>
-            <div class="task-sub">${esc(taskSub(t))}</div>
+            <div class="task-sub">${esc(taskSub(t))}${
+              hasProgress(t) ? `<button class="task-reset" data-reset="${k}" title="清空这个任务的已练记录和续读位置（分数保留）">重置</button>` : ''
+            }</div>
           </div>
           <div class="task-score-box">${taskScoreBox(t)}</div>
         </div>`
@@ -780,10 +825,39 @@ export function renderPlayer(root, courseId) {
         const t = tasks[parseInt(el.dataset.task, 10)];
         state.filter = t.indexes;
         state.taskLabel = t.label;
-        state.focusPos = 0;
+        const { pos, resumed } = resumePosFor(t);
+        state.focusPos = pos;
         state.readPart = null;
         setMode(t.mode);
         renderSegments();
+        if (resumed) {
+          toast(`已跳到上次位置 ${pos + 1}/${t.indexes.length}`);
+          // 电脑端是整页列表，滚到那一句并闪一下
+          const el2 = segEl(t.indexes[pos]);
+          if (el2) {
+            el2.scrollIntoView({ block: 'center' });
+            el2.classList.add('flash');
+            later(() => el2.classList.remove('flash'), 1400);
+          }
+        }
+      };
+    });
+    // 重置本任务进度：清掉这部分的「已练」标记和游标，分数保留（取历史最好）
+    listEl.querySelectorAll('[data-reset]').forEach((b) => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        const t = tasks[parseInt(b.dataset.reset, 10)];
+        if (!confirm(`清空「${t.label}」的练习进度？\n已记录的分数会保留。`)) return;
+        for (const i of t.indexes) state.done.delete(i);
+        saveDone();
+        delete state.pos[t.label];
+        try {
+          localStorage.setItem(keyPos, JSON.stringify(state.pos));
+        } catch (err) {
+          /* 忽略 */
+        }
+        renderTasks();
+        toast(`已重置「${t.label}」`);
       };
     });
     listEl.querySelectorAll('[data-video]').forEach((el) => {
@@ -963,6 +1037,7 @@ export function renderPlayer(root, courseId) {
     }
     stopAudio();
     state.focusPos = pos;
+    savePos(state.taskLabel, idxs[pos]); // 手机端卡片翻到哪，也记到哪
     renderFocus(autoplay);
   }
 

@@ -237,6 +237,14 @@ body.mobile .task-sub {
   color: #9b99b0;
 }
 
+body.mobile .task-reset {
+  font-size: 11.5px;
+  line-height: 18px;
+  border-color: #ece9f7;
+  background: #faf9ff;
+  color: #8f8ca8;
+}
+
 /* ---------- 按钮 ---------- */
 body.mobile .btn {
   border-radius: 999px;

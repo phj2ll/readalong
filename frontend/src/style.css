@@ -830,6 +830,45 @@ select:focus {
   margin-top: 2px;
 }
 
+/* 任务行里的「重置」小按钮：尾随在副标题后面，不单独占一行 */
+.task-reset {
+  margin-left: 8px;
+  padding: 1px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  line-height: 17px;
+  cursor: pointer;
+  vertical-align: 1px;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.task-reset:hover {
+  border-color: #e5b0b0;
+  background: #fff7f7;
+  color: #c94b4b;
+}
+
+/* 断点续读：滚到上次那句后闪一下，别让用户自己找 */
+@keyframes ra-flash {
+  0% {
+    background: #fff3cd;
+    box-shadow: 0 0 0 2px rgba(242, 201, 76, 0.9);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 2px rgba(242, 201, 76, 0);
+  }
+}
+
+.flash {
+  animation: ra-flash 1.4s ease-out;
+  border-radius: 10px;
+}
+
 .task-ico.ico-video {
   background: #ffecec;
   color: #d43a3a;
