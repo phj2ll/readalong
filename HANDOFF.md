@@ -311,6 +311,24 @@ Wails 的 `/wails/runtime.js` 和 IPC 在进入自定义 handler 之前就已处
 （没有 `stopAt`，`timeupdate` 里会直接 return），如果不处理，`audio.src` 就一直卡在 blob URL，
 之后点「原声」播不出来。`player.js` 里 `stopAudio()` + `ended` 监听共同负责还原。
 
+### 6.8 分数口径：分母是全部题目，不是已评题目
+
+任务行 / 书架上的分数**不是**「已评句子的平均分」，而是：
+
+```
+得分 = 已评分数总和 / 全部题数        （没评过的题按 0 分算，100 分制）
+```
+
+所以「10 个单词只读了 2 个、两个都 100 分」显示 **20**，不是 100 —— 这个数字本身就是完成度，
+用户一眼能看出读了多少。实现在 `frontend/src/score.js` 的 `scoreFor()`，调用方必须给出总题数：
+
+- 任务行：`scoreFor(scores, t.indexes)`（分母 = 该任务的题数，也就是 `indexes.length`）
+- Unit 行 / 课程卡：`scoreFor(scores, null, course.count)`（分数表只知道评过的句子，
+  所以总题数必须从 `meta.json` 的 `count` 传进来，不能靠 `Object.keys(scores).length`）
+- 整本书：`已得分总和 / 总句数`
+
+每句只保留**历史最好成绩**（`ra.score.<courseId>`），重录不会把分数改低。
+
 ---
 
 ## 7. 构建与发布

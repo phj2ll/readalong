@@ -1,6 +1,6 @@
 import { api, esc, fmtTime, isWails, toast } from '../api.js';
 import { recstore } from '../recstore.js';
-import { scoreGrade, summarizeIndexes } from '../score.js';
+import { formatScore, scoreFor, scoreGrade } from '../score.js';
 
 const MODES = [
   { key: 'loop', label: '单句循环' },
@@ -387,12 +387,27 @@ export function renderPlayer(root, courseId) {
   }
 
   // ---------- 评分（讯飞 ISE） ----------
-  // 任务行上的均分：0 句评过就不显示，免得满屏「均分 0」
-  function taskScoreHtml(t) {
-    const s = summarizeIndexes(state.scores, t.indexes);
-    if (!s.n) return '';
-    const done = s.n >= t.indexes.length ? '全部完成' : `${s.n}/${t.indexes.length} 句`;
-    return `<span class="task-score ${scoreGrade(s.avg)}" title="已评 ${done}，取历史最好成绩">均分 ${s.avg}</span>`;
+  // 任务行右侧的分数：100 分制，分母是全部题目（没评过的按 0 分算），
+  // 所以「10 个词读了 2 个」显示 20 分，一眼能看出完成度。
+  function taskScoreBox(t) {
+    const s = scoreFor(state.scores, t.indexes);
+    const tip = `已评 ${s.n}/${s.total}${t.cat === '单词' ? ' 个词' : ' 句'}，每项取历史最好成绩`;
+    return (
+      `<span class="task-score ${scoreGrade(s.score)}" title="${esc(tip)}">${formatScore(s.score)}</span>` +
+      `<span class="task-score-max">/100</span>` +
+      `<span class="task-go">›</span>`
+    );
+  }
+
+  // 任务副标题：共几题 + 已评几题（参照外研U学的「共3道题」）
+  function taskSub(t) {
+    if (t.sub) return t.sub;
+    const unit = t.cat === '单词' ? '个词' : '句';
+    const s = scoreFor(state.scores, t.indexes);
+    let text = `共 ${t.indexes.length} ${unit}`;
+    if (t.parts > 1) text += ` · ${t.parts} 段`;
+    if (s.n) text += ` · 已评 ${s.n}`;
+    return text;
   }
 
   function scoreChipText(i) {
@@ -705,7 +720,23 @@ export function renderPlayer(root, courseId) {
     if (state.data) $('#title').textContent = state.data.title || '跟读练习';
     const tasks = buildTasks();
     const vids = state.data.videos || [];
+    // 本课总分：分母是整门课的全部句子（没评过算 0 分）
+    const courseSc = scoreFor(
+      state.scores,
+      state.data.segments.map((_, i) => i)
+    );
     listEl.innerHTML = `
+      <div class="card score-summary">
+        <div class="ss-col">
+          <div class="ss-label">本课得分</div>
+          <div class="ss-num ${scoreGrade(courseSc.score)}">${formatScore(courseSc.score)}<small>/100</small></div>
+        </div>
+        <div class="ss-sep"></div>
+        <div class="ss-col">
+          <div class="ss-label">已评题数</div>
+          <div class="ss-num">${courseSc.n}<small>/${courseSc.total}</small></div>
+        </div>
+      </div>
       <div class="card unit-card">
         <div class="unit-title">${esc(state.data.title)}</div>
         ${tasks
@@ -714,10 +745,10 @@ export function renderPlayer(root, courseId) {
         <div class="task-row" data-task="${k}">
           <span class="task-ico ${CAT_CLS[t.cat] || 'ico-text'}">${CAT_ICON[t.cat] || '📖'}</span>
           <div class="task-info">
-            <div class="task-name">${esc(t.label)}${taskScoreHtml(t)}</div>
-            <div class="task-sub">${esc(t.sub || `共 ${t.indexes.length} 句${t.parts > 1 ? ` · ${t.parts} 段` : ''}`)}</div>
+            <div class="task-name">${esc(t.label)}</div>
+            <div class="task-sub">${esc(taskSub(t))}</div>
           </div>
-          <button class="btn small primary">开始</button>
+          <div class="task-score-box">${taskScoreBox(t)}</div>
         </div>`
           )
           .join('')}
